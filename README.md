@@ -57,13 +57,25 @@ Automatically enriches events with GeoIP metadata (city, country, latitude, long
 ---
 
 ## Installation
+### GeoIP Database Requirement
+
+This project uses the MaxMind GeoLite2 City database for IP enrichment.
+
+Due to MaxMind licensing restrictions, the database is **not stored in the repository**.
+Instead, it is automatically downloaded during installation.
+
+Before running `install.sh`, export your MaxMind license key:
+
+```bash
+export MAXMIND_LICENSE_KEY=YOUR_MAXMIND_KEY
+```
 
 ### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/<your-username>/foss-soc-engine.git
 cd foss-soc-engine
-
+```
 2. Run the Installer
 
 The installer performs the following:
@@ -73,24 +85,26 @@ Installs Python dependencies
 Creates runtime directories (logs/, database/)
 
 Sets required permissions
-
+```
 chmod +x install.sh
 ./install.sh
-
+```
 3. Configure GeoIP Database
 
 The engine requires the MaxMind GeoLite2 City database.
 
 Download GeoLite2-City.mmdb from MaxMind
 
-Place it in the database/ directory
+Place it in the database/ directory or you it can be directly installed using install.sh if you provide keys to it
 
+```
 mv /path/to/GeoLite2-City.mmdb ./database/
+```
 
 Configuration
 
 Edit config.yaml to match your environment.
-
+```
 kafka:
   bootstrap_servers: ["localhost:9092"]
   input_topic: "^(syslog|waf-logs|.*)$"
@@ -105,39 +119,39 @@ program_mapping:
   ftp_server: "linux_auth"
   modsec_audit: "modsec"
 
-
+```
 Program mapping allows multiple source programs to reuse a single rule definition.
 
 Usage
 Manual Execution (Debug / Development)
 
 Run the engine in the foreground:
-
+```
 python3 main.py
-
+```
 Running as a System Service (Production)
 
 Generate and enable the systemd service:
-
+```
 sudo ./setup_service.sh
-
+```
 
 Check service status:
-
+```
 sudo systemctl status foss-soc
-
+```
 
 View live logs:
-
+```
 journalctl -u foss-soc -f
-
+```
 Development and Testing
 Interactive Rule Tester
 
 Test regex patterns and JSON mappings without Kafka ingestion:
-
+```
 python3 test_rules.py
-
+```
 
 Options:
 
@@ -148,9 +162,9 @@ Explicit parser selection for targeted testing
 File-Based Testing
 
 Process a file containing raw logs to validate bulk parsing behavior:
-
+```
 python3 test_file.py sample_logs.txt postfix
-
+```
 Directory Structure
 ├── config.yaml          # Main runtime configuration
 ├── core/
@@ -174,7 +188,7 @@ The engine writes health metrics every 60 seconds to logs/stats.json.
 This file can be ingested by external monitoring or SIEM agents (Filebeat, Wazuh).
 
 Example:
-
+```
 {
   "timestamp": "2026-01-27T10:00:00",
   "uptime_sec": 3600,
@@ -182,7 +196,7 @@ Example:
   "total_processed": 1500000,
   "errors_last_min": 0
 }
-
+```
 Adding New Parsing Rules
 
 Create a new .yaml file in the rules/ directory
@@ -194,10 +208,8 @@ Add regex patterns or JSON field mappings
 Map the source program to the rule in config.yaml
 
 Restart the service
-
+```
 sudo systemctl restart foss-soc
-
-License
-
+```
 MIT
 
