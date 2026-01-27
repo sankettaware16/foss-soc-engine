@@ -120,6 +120,17 @@ program_mapping:
   modsec_audit: "modsec"
 
 ```
+install and setup redis
+```
+sudo apt install redis-server -y
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+```
+create log dir
+```
+sudo mkdir -p /var/log/soc_output/
+sudo chown -R username:username /var/log/soc_output/ #if required
+
 Program mapping allows multiple source programs to reuse a single rule definition.
 
 Usage
