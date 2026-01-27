@@ -1,0 +1,39 @@
+pattern_name: "linux_auth"
+
+strategy: "multi_match"
+
+patterns:
+  - name: "ssh_success"
+    regex: 'sshd\[\d+\]: Accepted password for (?P<user>\w+) from (?P<ip>[\d\.]+) port (?P<port>\d+)'
+    mapping: { "user": "user.name", "ip": "source.ip", "port": "source.port" }
+    static: { "event.action": "login", "event.outcome": "success" }
+
+  - name: "ssh_failed"
+    regex: 'sshd\[\d+\]: Failed password for (invalid user )?(?P<user>\w+) from (?P<ip>[\d\.]+)'
+    mapping: { "user": "user.name", "ip": "source.ip" }
+    static: { "event.action": "login", "event.outcome": "failure" }
+
+  - name: "ssh_invalid_user"
+    regex: 'sshd\[\d+\]: Invalid user (?P<user>\w+) from (?P<ip>[\d\.]+)'
+    mapping: { "user": "user.name", "ip": "source.ip" }
+    static: { "event.action": "login", "event.outcome": "failure", "event.reason": "unknown_user" }
+
+  - name: "sudo_run"
+    regex: 'sudo:\s+(?P<actor>\w+) : TTY=.*; USER=(?P<target>\w+) ; COMMAND=(?P<cmd>.*)'
+    mapping: { "actor": "user.name", "target": "user.target.name", "cmd": "process.command_line" }
+    static: { "event.action": "elevation" }
+
+  - name: "cron_session"
+    regex: 'CRON\[\d+\]: pam_unix\(cron:session\): session opened for user (?P<user>\w+)'
+    mapping: { "user": "user.name" }
+    static: { "event.category": "cron" }
+
+  - name: "system_session_start"
+    regex: 'systemd-logind\[\d+\]: New session (?P<session_id>\d+) of user (?P<user>\w+)'
+    mapping: { "session_id": "session.id", "user": "user.name" }
+    static: { "event.category": "session", "event.type": "start" }
+
+  - name: "system_session_end"
+    regex: 'systemd-logind\[\d+\]: Removed session (?P<session_id>\d+)'
+    mapping: { "session_id": "session.id" }
+    static: { "event.category": "session", "event.type": "end" }

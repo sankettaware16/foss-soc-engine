@@ -1,0 +1,42 @@
+pattern_name: "postfix"
+
+strategy: "stateful"
+id_regex: '(?P<id>[A-Z0-9]{10,12}):'
+end_signal: "removed"
+
+patterns:
+  - regex: '\s(?P<hostname>[a-zA-Z0-9-]+)\spostfix\/'
+    mapping: { "hostname": "host.name" }
+
+  - regex: 'sasl_username=(?P<auth_user>[^, ]+)'
+    mapping: { "auth_user": "user.name" }
+
+  # Internal Sender
+  - regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>iitb\.ac\.in))>'
+    mapping: { "sender": "email.from", "s_domain": "email.sender_domain" }
+    static: { "email.internal_sender": true, "email.sender_type": "internal" }
+
+  # External Sender
+  - regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>(?!iitb\.ac\.in)[^>]+))>'
+    mapping: { "sender": "email.from", "s_domain": "email.sender_domain" }
+    static: { "email.internal_sender": false, "email.sender_type": "external" }
+
+  # Internal Recipient
+  - regex: 'to=<(?P<recipient>[^@]+@(?P<r_domain>iitb\.ac\.in))>.*status=(?P<status>[a-z]+)'
+    mapping: { "recipient": "email.to", "r_domain": "email.recipient_domain", "status": "event.outcome" }
+    static: { "email.external_recipient": false, "email.recipient_type": "internal" }
+
+  # External Recipient
+  - regex: 'to=<(?P<recipient>[^@]+@(?P<r_domain>(?!iitb\.ac\.in)[^>]+))>.*status=(?P<status>[a-z]+)'
+    mapping: { "recipient": "email.to", "r_domain": "email.recipient_domain", "status": "event.outcome" }
+    static: { "email.external_recipient": true, "email.recipient_type": "external" }
+
+  - regex: 'relay=(?P<relay_host>[^\[]+)\[(?P<relay_ip>[\d\.]+)\]'
+    mapping: { "relay_host": "email.relay.hostname", "relay_ip": "email.relay.ip" }
+
+  - regex: 'client=(?P<host>.*?)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "ip": "source.ip" }
+
+  - regex: 'postfix/bounce.*sender non-delivery notification: (?P<bounce_id>\w+)'
+    mapping: { "bounce_id": "event.reason" }
+    static: { "event.outcome": "bounced" }

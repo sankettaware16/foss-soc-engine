@@ -1,0 +1,10 @@
+pattern_name: "apache_access"
+
+strategy: "stateless"
+regex: '(?P<ip>[\d\.]+) - - \[(?P<timestamp>.*?)\] "(?P<method>\w+) (?P<url>.*?) HTTP/.*?" (?P<status>\d+)'
+
+mapping:
+  ip: "source.ip"
+  method: "http.request.method"
+  url: "url.path"
+  status: "http.response.status_code|int"

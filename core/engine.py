@@ -1,0 +1,196 @@
+import re
+import json
+import redis
+from datetime import datetime
+from utils.geoip import GeoIPClient
+
+# Initialize Redis connection
+r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+class UniversalEngine:
+    def __init__(self, rule_config):
+        self.config = rule_config
+        self.strategy = rule_config.get('strategy', 'stateless')
+        self.geoip = GeoIPClient()
+        
+        # Pre-compile regex patterns based on strategy
+        if self.strategy == 'stateless':
+            self.main_regex = re.compile(self.config['regex'])
+            
+        elif self.strategy in ['multi_match', 'stateful']:
+            self.patterns = [] if self.strategy == 'multi_match' else []
+            self.sub_patterns = [] if self.strategy == 'stateful' else []
+            
+            source_patterns = self.config.get('patterns', [])
+            target_list = self.patterns if self.strategy == 'multi_match' else self.sub_patterns
+            
+            for p in source_patterns:
+                target_list.append({
+                    "name": p.get('name'),
+                    "regex": re.compile(p['regex']),
+                    "mapping": p.get('mapping', {}),
+                    "static": p.get('static', {})
+                })
+            
+            if self.strategy == 'stateful':
+                self.id_regex = re.compile(self.config['id_regex'])
+
+    def process(self, log_input):
+        if self.strategy == 'stateless':
+            return self._process_stateless(log_input)
+        elif self.strategy == 'multi_match':
+            return self._process_multi_match(log_input)
+        elif self.strategy == 'stateful':
+            return self._process_stateful(log_input)
+        elif self.strategy == 'json_map':
+            return self._process_json_map(log_input)
+
+    def _process_json_map(self, log_input):
+        try:
+            data = json.loads(log_input.raw)
+        except json.JSONDecodeError:
+            return None
+
+        event = self._init_event(log_input)
+        mapping = self.config.get('mapping', {})
+        
+        for source_path, target_field in mapping.items():
+            value = self._get_path(data, source_path)
+            
+            if value is not None:
+                # Handle list values from wildcards
+                if isinstance(value, list) and len(value) > 0:
+                    value = [v for v in value if v is not None]
+                    if not value: continue
+                
+                self._set_nested(event, target_field, value)
+
+        self._apply_static(event, self.config.get('static', {}))
+        return self._enrich_event(event)
+
+    def _get_path(self, data, path):
+        """Retrieves values from nested dictionary using dot notation and wildcards."""
+        keys = path.split('.')
+        current = data
+        
+        for i, k in enumerate(keys):
+            # Handle wildcard recursion for lists
+            if k == '*':
+                if isinstance(current, list):
+                    remaining_path = '.'.join(keys[i+1:])
+                    return [self._get_path(item, remaining_path) for item in current]
+                else:
+                    return None
+            
+            try:
+                if isinstance(current, list):
+                    k = int(k)
+                current = current[k]
+            except (KeyError, IndexError, ValueError, TypeError):
+                return None
+                
+        return current
+
+    def _enrich_event(self, event):
+        if not event: return None
+        source_ip = event.get('source', {}).get('ip')
+        if source_ip:
+            geo = self.geoip.enrich(source_ip)
+            if geo:
+                if 'source' not in event: 
+                    event['source'] = {}
+                event['source']['geo'] = geo
+        return event
+
+    def _process_stateless(self, log_input):
+        match = self.main_regex.search(log_input.raw)
+        if not match: return None
+        
+        event = self._init_event(log_input)
+        self._map_fields(event, match.groupdict(), self.config.get('mapping', {}))
+        self._apply_static(event, self.config.get('static', {}))
+        return self._enrich_event(event)
+
+    def _process_multi_match(self, log_input):
+        for p in self.patterns:
+            match = p['regex'].search(log_input.raw)
+            if match:
+                event = self._init_event(log_input)
+                self._map_fields(event, match.groupdict(), p['mapping'])
+                self._apply_static(event, p.get('static', {}))
+                return self._enrich_event(event)
+        return None
+
+    def _process_stateful(self, log_input):
+        match = self.id_regex.search(log_input.raw)
+        if not match: return None
+        
+        trx_id = match.group('id')
+        redis_key = f"state:{trx_id}"
+        state = r.get(redis_key)
+        
+        event = json.loads(state) if state else self._init_event(log_input)
+        if not state: 
+            event['event']['id'] = trx_id
+            event['raw_buffer'] = []
+            event['_metadata'] = log_input.meta
+
+        event['raw_buffer'].append(log_input.raw)
+        
+        for p in self.sub_patterns:
+            m = p['regex'].search(log_input.raw)
+            if m:
+                self._map_fields(event, m.groupdict(), p['mapping'])
+                self._apply_static(event, p.get('static', {}))
+
+        if self.config['end_signal'] in log_input.raw:
+            r.delete(redis_key)
+            event['event']['original'] = "\n".join(event['raw_buffer'])
+            if 'raw_buffer' in event: del event['raw_buffer']
+            if '_metadata' in event: del event['_metadata']
+            return self._enrich_event(event)
+        else:
+            r.set(redis_key, json.dumps(event), ex=300)
+            return None
+
+    def _init_event(self, log_input):
+        return {
+            "@timestamp": datetime.utcnow().isoformat() + "Z",
+            "event": {"original": log_input.raw, "module": log_input.program},
+            "observer": log_input.meta
+        }
+
+    def _map_fields(self, event, data, mapping):
+        for k, v in data.items():
+            if k in mapping:
+                target, dtype = mapping[k].split('|') if '|' in mapping[k] else (mapping[k], 'str')
+                val = int(v) if dtype == 'int' and v.isdigit() else v
+                self._set_nested(event, target, val)
+
+    def _apply_static(self, event, static):
+        if static:
+            for k, v in static.items(): 
+                self._set_nested(event, k, v)
+
+    def _set_nested(self, d, path, value):
+        keys = path.split('.')
+        for key in keys[:-1]: 
+            d = d.setdefault(key, {})
+        last = keys[-1]
+        
+        if last in d:
+            if isinstance(d[last], list):
+                if isinstance(value, list):
+                    for v in value:
+                        if v not in d[last]: d[last].append(v)
+                elif value not in d[last]: 
+                    d[last].append(value)
+            else:
+                if d[last] != value:
+                    d[last] = [d[last]]
+                    if isinstance(value, list): 
+                        d[last].extend(value)
+                    else: 
+                        d[last].append(value)
+        else:
+            d[last] = value
