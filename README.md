@@ -176,6 +176,8 @@ Process a file containing raw logs to validate bulk parsing behavior:
 ```
 python3 test_file.py sample_logs.txt postfix
 ```
+
+```
 Directory Structure
 ├── config.yaml          # Main runtime configuration
 ├── core/
@@ -192,7 +194,7 @@ Directory Structure
 │   ├── dlq.json        # Dead Letter Queue
 │   └── stats.json      # Health metrics
 └── main.py             # Application entry point
-
+```
 Monitoring
 
 The engine writes health metrics every 60 seconds to logs/stats.json.
@@ -222,5 +224,5 @@ Restart the service
 ```
 sudo systemctl restart foss-soc
 ```
-MIT
+
 
