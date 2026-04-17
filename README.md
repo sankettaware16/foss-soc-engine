@@ -73,8 +73,9 @@ export MAXMIND_LICENSE_KEY=YOUR_MAXMIND_KEY
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/<your-username>/foss-soc-engine.git
-cd foss-soc-engine
+git clone https://github.com/sankettaware16/foss-soc-engine.git
+sudo mv foss-soc-engine /etc/
+cd /etc/foss-soc-engine
 ```
 2. Run the Installer
 
@@ -138,7 +139,7 @@ Manual Execution (Debug / Development)
 
 Run the engine in the foreground:
 ```
-python3 main.py
+sudo python3 main.py
 ```
 Running as a System Service (Production)
 
