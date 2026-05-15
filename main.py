@@ -1,21 +1,22 @@
 import os
 import sys
 import json
+import redis
 import time
 import yaml
 import logging
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from kafka import KafkaConsumer
 from core.schema import LogInput
 from core.registry import RuleRegistry
 
-# Setup paths
+# Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 
-# Load configuration
+# Load Config
 try:
     with open(CONFIG_PATH, "r") as f:
         config = yaml.safe_load(f)
@@ -28,8 +29,9 @@ LOG_DIR = os.path.join(BASE_DIR, "logs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 
-# logging setup
+# Logging Setup
 log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
 file_handler = RotatingFileHandler(
     os.path.join(LOG_DIR, "engine.log"),
     maxBytes=10 * 1024 * 1024,
@@ -45,20 +47,20 @@ logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
-# Initialize Registry
+# Registry Setup
 try:
     registry = RuleRegistry(
         rules_dir=os.path.join(BASE_DIR, config["paths"]["rules_dir"]),
         program_map=config.get("program_mapping", {})
     )
-    logger.info("Rule registry loaded successfully")
+    logger.info("Rule registry initialized")
 except Exception as e:
-    logger.critical(f"Failed to initialize rule registry: {e}")
+    logger.critical(f"Failed to initialize registry: {e}")
     sys.exit(1)
 
 def write_dlq(raw_log, program, error):
     entry = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "program": program,
         "error": str(error),
         "raw": raw_log,
@@ -67,7 +69,7 @@ def write_dlq(raw_log, program, error):
         with open(os.path.join(LOG_DIR, "dlq.json"), "a") as f:
             f.write(json.dumps(entry) + "\n")
     except Exception as e:
-        logger.error(f"Unable to write DLQ entry: {e}")
+        logger.error(f"DLQ write failed: {e}")
 
 class HealthMonitor:
     def __init__(self):
@@ -93,7 +95,7 @@ class HealthMonitor:
         eps = self.events_in_window / elapsed if elapsed else 0
 
         stats = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "uptime_sec": int(now - self.start_time),
             "eps": round(eps, 2),
             "total_processed": self.total_events,
@@ -103,7 +105,7 @@ class HealthMonitor:
         try:
             with open(os.path.join(LOG_DIR, "stats.json"), "w") as f:
                 json.dump(stats, f)
-            logger.info(f"Health check: {stats['eps']} EPS, {stats['total_processed']} total, {stats['errors_last_min']} errors")
+            logger.info(f"Stats: {stats['eps']} EPS, {stats['total_processed']} processed, {stats['errors_last_min']} errors")
         except Exception:
             pass
 
@@ -127,7 +129,7 @@ def flush_batch(batch):
             with open(os.path.join(OUTPUT_DIR, f"{module}.json"), "a") as f:
                 f.write("\n".join(lines) + "\n")
         except Exception as e:
-            logger.error(f"Failed to write output for module '{module}': {e}")
+            logger.error(f"Batch write failed for {module}: {e}")
 
 def main():
     try:
@@ -140,9 +142,9 @@ def main():
             value_deserializer=lambda m: m.decode("utf-8", errors="ignore"),
         )
         consumer.subscribe(pattern=config["kafka"]["input_topic"])
-        logger.info("Kafka consumer initialized")
+        logger.info(f"Kafka consumer started on topic: {config['kafka']['input_topic']}")
     except Exception as e:
-        logger.critical(f"Kafka connection failed: {e}")
+        logger.critical(f"Kafka connection error: {e}")
         sys.exit(1)
 
     batch = []
@@ -166,17 +168,22 @@ def main():
                             continue
 
                         try:
-                            event = processor.process(log_input)
-                            if event:
-                                batch.append(event)
-                                monitor.record_event()
+                            result = processor.process(log_input)
+                            if result:
+                                # Handle lists returned by XML parsing
+                                if isinstance(result, list):
+                                    batch.extend(result)
+                                    for _ in result: monitor.record_event()
+                                else:
+                                    batch.append(result)
+                                    monitor.record_event()
                         except Exception as e:
-                            logger.error(f"Processor failure ({log_input.program}): {e}")
+                            logger.error(f"Parsing error ({log_input.program}): {e}")
                             write_dlq(message.value, log_input.program, e)
                             monitor.record_error()
 
                     except Exception as e:
-                        logger.error(f"Malformed message envelope: {e}")
+                        logger.error(f"Envelope error: {e}")
                         write_dlq(message.value, "unknown", e)
                         monitor.record_error()
 
@@ -189,11 +196,11 @@ def main():
             monitor.flush_if_needed()
 
     except KeyboardInterrupt:
-        logger.info("Shutdown requested")
+        logger.info("Stopping engine...")
         flush_batch(batch)
         consumer.close()
     except Exception as e:
-        logger.critical(f"Fatal engine error: {e}")
+        logger.critical(f"Fatal error: {e}")
         traceback.print_exc()
 
 if __name__ == "__main__":
