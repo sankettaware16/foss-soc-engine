@@ -161,10 +161,14 @@ def main():
                     try:
                         log_input = LogInput(message.value)
                         if not log_input.valid:
+                            write_dlq(message.value, "unknown", "invalid_envelope")
+                            monitor.record_error()
                             continue
 
                         processor = registry.get_processor(log_input.program)
                         if not processor:
+                            write_dlq(message.value, log_input.program, "no_matching_rule")
+                            monitor.record_error()
                             continue
 
                         try:
@@ -177,6 +181,9 @@ def main():
                                 else:
                                     batch.append(result)
                                     monitor.record_event()
+                            elif processor.strategy != "stateful":
+                                write_dlq(message.value, log_input.program, "no_match")
+                                monitor.record_error()
                         except Exception as e:
                             logger.error(f"Parsing error ({log_input.program}): {e}")
                             write_dlq(message.value, log_input.program, e)

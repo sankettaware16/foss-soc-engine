@@ -178,6 +178,35 @@ Process a file containing raw logs to validate bulk parsing behavior:
 python3 test_file.py sample_logs.txt postfix
 ```
 
+Auto-detect the best rule per line:
+```
+python3 test_file.py sample_logs.txt AUTO
+```
+
+Dump matched events as JSON:
+```
+python3 test_file.py sample_logs.txt postfix --show-success
+```
+
+Dump every parsed line with the matched rule:
+```
+python3 test_file.py sample_logs.txt AUTO --show-parsed
+```
+
+Dump every unparsed line with the reason (`no_match`, `buffered`, `errors`):
+```
+python3 test_file.py sample_logs.txt AUTO --show-unparsed
+```
+
+Tune sample size for each unparsed bucket in the summary:
+```
+python3 test_file.py sample_logs.txt postfix --samples 20
+```
+
+The script prints a summary with parsed vs unparsed counts, plus reason buckets
+(`no_match`, `buffered`, `errors`) and sample lines for each bucket. In AUTO mode,
+it also shows a per-rule parsed count to help identify gaps.
+
 ```
 Directory Structure
 ├── config.yaml          # Main runtime configuration
@@ -211,19 +240,149 @@ Example:
   "errors_last_min": 0
 }
 ```
-Adding New Parsing Rules
+Writing and Updating Parsing Rules
 
-Create a new .yaml file in the rules/ directory
+Use this section when you need to support a new log source or refine an existing parser.
 
-Define the parsing strategy (stateless, multi_match, stateful, or json_map)
+Quick steps
+1. Create or edit a YAML file in the rules/ directory.
+2. Set `pattern_name` (must be unique). If missing, the file name is used.
+3. Choose a `strategy` (see below) and define its fields.
+4. Add `mapping` (and optional `static`) to normalize fields.
+5. Map the source program to the rule in config.yaml.
+6. Restart the service (or restart the process).
 
-Add regex patterns or JSON field mappings
-
-Map the source program to the rule in config.yaml
-
-Restart the service
 ```
 sudo systemctl restart foss-soc
 ```
+
+Choosing the best strategy
+- stateless: Best for consistent single-line logs (access logs, IDS alerts).
+- multi_match: Best when one source emits multiple line formats (auth, ssh, sudo).
+- stateful: Best for multi-line transactions correlated by ID. Also supports non-ID lines
+  through pattern fallback (connect, TLS, disconnect, NOQUEUE).
+- json_map: Best when raw logs are already JSON (WAF, cloud audit, app logs).
+- xml_xpath: Best when raw logs are XML (scanner exports, XML audit feeds).
+
+Common fields
+- pattern_name: Name of the rule (used by program mapping).
+- strategy: One of stateless, multi_match, stateful, json_map, xml_xpath.
+- mapping: Maps regex group names or JSON/XML paths to ECS-like targets.
+- static: Fixed fields added to every event.
+- regex: Required for stateless.
+- patterns: Required for multi_match and stateful.
+- id_regex, end_signal: Required for stateful.
+- items_xpath: Required for xml_xpath.
+
+Mapping syntax notes
+- Regex strategies support type suffix: `field.path|int` or `field.path|float`.
+- json_map uses dot paths and supports wildcards with `*` (returns a list).
+- xml_xpath uses ElementTree paths and supports attributes via `/@`.
+- Repeated mappings to the same field are merged into lists automatically.
+
+Examples
+
+Stateless (single regex)
+```yaml
+pattern_name: "apache_access"
+strategy: "stateless"
+regex: '(?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]+))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
+mapping:
+  ip: "source.ip"
+  method: "http.request.method"
+  status: "http.response.status_code|int"
+  body_bytes: "http.response.body.bytes|int"
+  user_agent: "user_agent.original"
+  referrer: "http.request.referrer"
+  path: "url.path"
+  query: "url.query"
+static:
+  event.category: "web"
+```
+
+Multi-match (multiple regexes)
+```yaml
+pattern_name: "linux_auth"
+strategy: "multi_match"
+patterns:
+  - name: "ssh_success"
+    regex: 'sshd\[\d+\]: Accepted password for (?P<user>\w+) from (?P<ip>[\d\.]+) port (?P<port>\d+)'
+    mapping:
+      user: "user.name"
+      ip: "source.ip"
+      port: "source.port"
+    static:
+      event.action: "login"
+      event.outcome: "success"
+
+  - name: "ssh_failed"
+    regex: 'sshd\[\d+\]: Failed password for (invalid user )?(?P<user>\w+) from (?P<ip>[\d\.]+)'
+    mapping:
+      user: "user.name"
+      ip: "source.ip"
+    static:
+      event.action: "login"
+      event.outcome: "failure"
+```
+
+Stateful (transaction correlation with fallback)
+```yaml
+pattern_name: "postfix"
+strategy: "stateful"
+id_regex: '(?P<id>[A-Z0-9]{10,12}):'
+end_signal: "removed"
+patterns:
+  - regex: 'client=(?P<host>.*?)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "ip": "source.ip" }
+
+  - regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>example\.com))>'
+    mapping: { "sender": "email.from", "s_domain": "email.sender_domain" }
+    static: { "email.sender_type": "internal" }
+
+  # This will still parse connect/TLS/NOQUEUE lines without a queue id
+  - regex: 'connect from (?P<host>.*?)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "ip": "source.ip" }
+```
+
+JSON map (direct field mapping)
+```yaml
+pattern_name: "modsec"
+strategy: "json_map"
+mapping:
+  transaction.client_ip: "source.ip"
+  transaction.request.method: "http.request.method"
+  transaction.messages.*.details.ruleId: "rule.id"
+  transaction.messages.*.message: "event.reason"
+static:
+  event.kind: "alert"
+  event.category: "web"
+  event.type: "waf"
+```
+
+XML XPath (structured XML)
+```yaml
+pattern_name: "openvas"
+strategy: "xml_xpath"
+items_xpath: ".//result"
+mapping:
+  nvt/@oid: "vulnerability.id"
+  host: "destination.ip"
+  severity: "event.severity|float"
+static:
+  event.category: "vulnerability"
+```
+
+Hooking a source program to a rule
+Add a program mapping in config.yaml:
+```yaml
+program_mapping:
+  postfix: "postfix"
+  nginx_access_log: "apache_access"
+  modsecurity_log: "modsec"
+```
+
+Testing your rule
+- Interactive: `python3 test_rules.py`
+- File-based: `python3 test_file.py sample_logs.txt AUTO`
 
 

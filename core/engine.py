@@ -163,7 +163,18 @@ class UniversalEngine:
 
     def _process_stateful(self, log_input):
         match = self.id_regex.search(log_input.raw)
-        if not match: return None
+
+        # Stateless fallback for non-ID logs
+        if not match:
+            for p in self.sub_patterns:
+                m = p['regex'].search(log_input.raw)
+                if m:
+                    event = self._init_event(log_input)
+                    self._map_fields(event, m.groupdict(), p['mapping'])
+                    self._apply_static(event, p.get('static', {}))
+                    return self._enrich_event(event)
+
+            return None
 
         trx_id = match.group('id')
         redis_key = f"state:{trx_id}"
@@ -186,8 +197,10 @@ class UniversalEngine:
         if self.config['end_signal'] in log_input.raw:
             r.delete(redis_key)
             event['event']['original'] = "\n".join(event['raw_buffer'])
-            if 'raw_buffer' in event: del event['raw_buffer']
-            if '_metadata' in event: del event['_metadata']
+            if 'raw_buffer' in event:
+                del event['raw_buffer']
+            if '_metadata' in event:
+                del event['_metadata']
             return self._enrich_event(event)
         else:
             r.set(redis_key, json.dumps(event), ex=300)
