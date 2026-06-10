@@ -1,21 +1,30 @@
 import re
 import json
 import redis
+import logging
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from utils.geoip import GeoIPClient
 
 # Initialize Redis connection
 r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+logger = logging.getLogger("soc-engine")
 
 class UniversalEngine:
     def __init__(self, rule_config):
         self.config = rule_config
         self.strategy = rule_config.get('strategy', 'stateless')
         self.geoip = GeoIPClient()
+        self.disabled = False
+        self.last_redis_error = None
 
         if self.strategy == 'stateless':
-            self.main_regex = re.compile(self.config['regex'])
+            try:
+                self.main_regex = re.compile(self.config['regex'])
+            except re.error as e:
+                logger.error(f"Invalid regex in rule '{self.config.get('pattern_name', 'unknown')}': {e}")
+                self.main_regex = None
+                self.disabled = True
 
         elif self.strategy in ['multi_match', 'stateful']:
             self.patterns = [] if self.strategy == 'multi_match' else []
@@ -25,17 +34,29 @@ class UniversalEngine:
             target_list = self.patterns if self.strategy == 'multi_match' else self.sub_patterns
 
             for p in source_patterns:
+                try:
+                    compiled = re.compile(p['regex'])
+                except re.error as e:
+                    logger.error(f"Invalid regex in rule '{self.config.get('pattern_name', 'unknown')}': {e}")
+                    continue
+
                 target_list.append({
                     "name": p.get('name'),
-                    "regex": re.compile(p['regex']),
+                    "regex": compiled,
                     "mapping": p.get('mapping', {}),
                     "static": p.get('static', {})
                 })
 
             if self.strategy == 'stateful':
-                self.id_regex = re.compile(self.config['id_regex'])
+                try:
+                    self.id_regex = re.compile(self.config['id_regex'])
+                except re.error as e:
+                    logger.error(f"Invalid id_regex in rule '{self.config.get('pattern_name', 'unknown')}': {e}")
+                    self.id_regex = None
 
     def process(self, log_input):
+        if self.disabled:
+            return None
         if self.strategy == 'stateless':
             return self._process_stateless(log_input)
         elif self.strategy == 'multi_match':
@@ -162,12 +183,41 @@ class UniversalEngine:
         return None
 
     def _process_stateful(self, log_input):
+        self.last_redis_error = None
+
+        # Fallback-only when id_regex is missing or invalid
+        if not self.id_regex:
+            for p in self.sub_patterns:
+                m = p['regex'].search(log_input.raw)
+                if m:
+                    event = self._init_event(log_input)
+                    self._map_fields(event, m.groupdict(), p['mapping'])
+                    self._apply_static(event, p.get('static', {}))
+                    return self._enrich_event(event)
+
+            return None
+
         match = self.id_regex.search(log_input.raw)
-        if not match: return None
+
+        # Stateless fallback for non-ID logs
+        if not match:
+            for p in self.sub_patterns:
+                m = p['regex'].search(log_input.raw)
+                if m:
+                    event = self._init_event(log_input)
+                    self._map_fields(event, m.groupdict(), p['mapping'])
+                    self._apply_static(event, p.get('static', {}))
+                    return self._enrich_event(event)
+
+            return None
 
         trx_id = match.group('id')
         redis_key = f"state:{trx_id}"
-        state = r.get(redis_key)
+        try:
+            state = r.get(redis_key)
+        except Exception as e:
+            self.last_redis_error = f"redis_get_failed: {e}"
+            return None
 
         event = json.loads(state) if state else self._init_event(log_input)
         if not state:
@@ -184,13 +234,22 @@ class UniversalEngine:
                 self._apply_static(event, p.get('static', {}))
 
         if self.config['end_signal'] in log_input.raw:
-            r.delete(redis_key)
+            try:
+                r.delete(redis_key)
+            except Exception as e:
+                self.last_redis_error = f"redis_delete_failed: {e}"
             event['event']['original'] = "\n".join(event['raw_buffer'])
-            if 'raw_buffer' in event: del event['raw_buffer']
-            if '_metadata' in event: del event['_metadata']
+            if 'raw_buffer' in event:
+                del event['raw_buffer']
+            if '_metadata' in event:
+                del event['_metadata']
             return self._enrich_event(event)
         else:
-            r.set(redis_key, json.dumps(event), ex=300)
+            try:
+                r.set(redis_key, json.dumps(event), ex=300)
+            except Exception as e:
+                self.last_redis_error = f"redis_set_failed: {e}"
+                return None
             return None
 
     def _init_event(self, log_input):

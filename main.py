@@ -78,6 +78,7 @@ class HealthMonitor:
         self.events_in_window = 0
         self.errors_in_window = 0
         self.total_events = 0
+        self.rule_stats = {}
 
     def record_event(self):
         self.events_in_window += 1
@@ -85,6 +86,35 @@ class HealthMonitor:
 
     def record_error(self):
         self.errors_in_window += 1
+
+    def _get_rule_stats(self, rule_name):
+        if rule_name not in self.rule_stats:
+            self.rule_stats[rule_name] = {
+                "parsed_messages": 0,
+                "parsed_events": 0,
+                "no_match": 0,
+                "buffered": 0,
+                "errors": 0,
+                "redis_errors": 0
+            }
+        return self.rule_stats[rule_name]
+
+    def record_parsed(self, rule_name, event_count=1):
+        stats = self._get_rule_stats(rule_name)
+        stats["parsed_messages"] += 1
+        stats["parsed_events"] += event_count
+
+    def record_no_match(self, rule_name):
+        self._get_rule_stats(rule_name)["no_match"] += 1
+
+    def record_buffered(self, rule_name):
+        self._get_rule_stats(rule_name)["buffered"] += 1
+
+    def record_rule_error(self, rule_name):
+        self._get_rule_stats(rule_name)["errors"] += 1
+
+    def record_redis_error(self, rule_name):
+        self._get_rule_stats(rule_name)["redis_errors"] += 1
 
     def flush_if_needed(self):
         now = time.time()
@@ -100,6 +130,7 @@ class HealthMonitor:
             "eps": round(eps, 2),
             "total_processed": self.total_events,
             "errors_last_min": self.errors_in_window,
+            "parser_stats": self.rule_stats,
         }
 
         try:
@@ -161,26 +192,57 @@ def main():
                     try:
                         log_input = LogInput(message.value)
                         if not log_input.valid:
+                            write_dlq(message.value, "unknown", "invalid_envelope")
+                            monitor.record_error()
                             continue
 
+                        rule_name = registry.program_map.get(log_input.program) or log_input.program
                         processor = registry.get_processor(log_input.program)
                         if not processor:
+                            write_dlq(message.value, log_input.program, "no_matching_rule")
+                            monitor.record_error()
                             continue
 
                         try:
                             result = processor.process(log_input)
+                            redis_error = getattr(processor, "last_redis_error", None)
+                            if redis_error:
+                                monitor.record_redis_error(rule_name)
+                                logger.error(f"Redis error ({log_input.program}): {redis_error}")
+                                if result is None:
+                                    write_dlq(message.value, log_input.program, redis_error)
+                                    monitor.record_error()
+                                    monitor.record_rule_error(rule_name)
+                                    continue
                             if result:
                                 # Handle lists returned by XML parsing
                                 if isinstance(result, list):
                                     batch.extend(result)
                                     for _ in result: monitor.record_event()
+                                    monitor.record_parsed(rule_name, len(result))
                                 else:
                                     batch.append(result)
                                     monitor.record_event()
+                                    monitor.record_parsed(rule_name, 1)
+                            else:
+                                if processor.strategy == "stateful":
+                                    if processor.id_regex and processor.id_regex.search(log_input.raw):
+                                        monitor.record_buffered(rule_name)
+                                    else:
+                                        write_dlq(message.value, log_input.program, "no_match")
+                                        monitor.record_error()
+                                        monitor.record_rule_error(rule_name)
+                                        monitor.record_no_match(rule_name)
+                                else:
+                                    write_dlq(message.value, log_input.program, "no_match")
+                                    monitor.record_error()
+                                    monitor.record_rule_error(rule_name)
+                                    monitor.record_no_match(rule_name)
                         except Exception as e:
                             logger.error(f"Parsing error ({log_input.program}): {e}")
                             write_dlq(message.value, log_input.program, e)
                             monitor.record_error()
+                            monitor.record_rule_error(rule_name)
 
                     except Exception as e:
                         logger.error(f"Envelope error: {e}")

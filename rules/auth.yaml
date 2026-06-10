@@ -180,6 +180,24 @@ patterns:
 # =========================================================
 # 3. SU (USER SWITCHING)
 # =========================================================
+  - name: "sudo_session_opened"
+    regex: 'sudo: pam_unix\(sudo:session\): session opened for user (?P<target>\w+)\(uid=\d+\) by (?P<user>\w+)\(uid=\d+\)'
+    mapping:
+      user: "user.name"
+      target: "user.target.name"
+    static:
+      event.category: "session"
+      event.type: "start"
+      event.action: "sudo_session"
+
+  - name: "sudo_session_closed"
+    regex: 'sudo: pam_unix\(sudo:session\): session closed for user (?P<target>\w+)'
+    mapping:
+      target: "user.target.name"
+    static:
+      event.category: "session"
+      event.type: "end"
+      event.action: "sudo_session"
 
   - name: "su_failed"
     regex: 'su\[\d+\]: FAILED SU \(to (?P<target>\w+)\) (?P<user>\w+) on (?P<tty>\S+)'
