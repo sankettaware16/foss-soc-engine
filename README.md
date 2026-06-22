@@ -49,6 +49,76 @@ engine on more machines with the same `group_id` — no code or rule changes.
 - Continuous health monitoring with throughput (EPS), error rate, and uptime tracking
 - Optional `orjson` acceleration (installed automatically; falls back to stdlib if absent)
 
+### Web UI (browser console — no terminal needed)
+A point-and-click console for operators who'd rather not use the command line: test
+logs, add/edit/test parsers, edit + validate the config, run the ECS helper and
+pre-flight check, and watch a **live engine Monitor**. See the **Web UI** section below.
+
+---
+
+## Web UI — run everything from your browser
+
+Everything you can do from the terminal, you can also do in a browser. The Web UI
+wraps the **same** tools (it reuses the real engine — it never re-implements parsing),
+so what you see in the browser is exactly what the pipeline does. It runs on
+**Flask + PyYAML only**.
+
+### Start it (local machine)
+
+```bash
+pip install -r webui/requirements-ui.txt    # Flask + PyYAML, that's all
+python3 webui/app.py                         # opens http://127.0.0.1:8600
+```
+
+Or use the one-step launcher (auto-creates a private venv and installs the deps):
+
+```bash
+./webui/start-soc-ui.sh        # Linux / macOS
+webui\Start-SOC-UI.bat         # Windows (just double-click it)
+```
+
+### Reach it over the network (Ubuntu / server)
+
+```bash
+SOC_UI_HOST=0.0.0.0 ./webui/start-soc-ui.sh   # bind all interfaces
+sudo ufw allow 8600/tcp                        # open the firewall (if ufw is on)
+hostname -I                                    # find the server's IP
+# then browse  http://<server-ip>:8600  from any machine on the LAN
+```
+
+It prints both the local and the network URL on startup. For an always-on service,
+install the bundled systemd unit:
+
+```bash
+sudo cp webui/foss-soc-ui.service /etc/systemd/system/
+sudo nano /etc/systemd/system/foss-soc-ui.service   # set User=, WorkingDirectory=, paths
+sudo systemctl daemon-reload && sudo systemctl enable --now foss-soc-ui
+# browse http://<server-ip>:8600
+```
+
+### What you can do in it
+
+| Tab | What it does |
+|---|---|
+| **Test** | Paste a raw log line → see the parsed ECS JSON (or why it didn't match) |
+| **Rules** | List / add / edit / delete parser YAML, with the ECS autocorrect built in |
+| **Config** | Edit `config.yaml` in the browser and validate it before saving |
+| **Tools** | Run the ECS field helper and the pre-flight check; output shown inline |
+| **Monitor** | Live engine status — EPS sparkline, uptime, workers, which rules are firing, host RAM/CPU, DLQ — auto-refreshing while the engine runs |
+
+### Environment knobs
+
+`SOC_UI_HOST` (default `127.0.0.1`; `0.0.0.0` for network) · `SOC_UI_PORT` (default
+`8600`) · `SOC_UI_NO_BROWSER=1` (don't auto-open a browser) · `SOC_LOG_DIR` (point the
+Monitor at the engine's `logs/` if the UI runs from a different folder) ·
+`SOC_UI_ALLOW_CONTROL=1` (enable the engine start/stop/restart buttons — off by default).
+
+> **Security:** the UI has no login — only expose it on a **trusted LAN or VPN**, never
+> the public internet. Engine start/stop controls stay disabled unless you opt in.
+>
+> Full step-by-step (including a **no-Python Windows `.exe`** and the server setup):
+> **[WEB_UI_GUIDE.md](WEB_UI_GUIDE.md)**.
+
 ---
 
 ## Prerequisites

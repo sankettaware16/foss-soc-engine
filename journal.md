@@ -21,6 +21,36 @@
 
 ## Entries
 
+## 2026-06-20 — README Web UI section + removed AI co-author trailers from commits
+**Asked:** README was ~90% terminal-only with no Web UI docs — add how to run/use the
+UI. Also: the public-repo commits showed an AI co-author; remove that (keep CLAUDE.md /
+journal.md as LLM project context, which the owner is fine with — just no AI attribution
+in git history).
+**Did:** Added a prominent "Web UI — run everything from your browser" section to
+`README.md` (local run, network/server run, the 5 tabs, env knobs, security note, link
+to WEB_UI_GUIDE.md) + a Core-Capabilities bullet. Rewrote the branch's commits to drop
+the `Co-Authored-By` trailer (`git filter-branch --msg-filter`) and force-pushed
+`feature/web-ui`.
+**Decided:** Honor the repo owner's request — omit AI co-author trailers on this repo
+from now on. CLAUDE.md + journal.md stay (project context for future LLMs).
+**Open:** None.
+
+## 2026-06-20 — Pushed everything to GitHub branch `feature/web-ui`
+**Asked:** Push this fully-working dir to GitHub as a new branch with proper commit history.
+**Did:** Created branch `feature/web-ui` off the local `rule/apache` base (8461bdd) and
+organized the whole session's work into **5 logical commits**: (1) perf+reliability
+(multiprocessing workers, at-least-once, orjson/caches), (2) ECS tooling (schema DB,
+ecs_helper, validator, rule migrations, guide), (3) ops tooling (preflight, replicate,
+examples), (4) web UI (Flask console, monitor, packaging), (5) docs+memory (README,
+CLAUDE.md, journal.md). Pushed to origin. Added a `.gitignore` negation
+`!examples/samples/*.log` so the replicate.py sample logs survive clone (else `*.log`
+would drop them). Verified no large files committed (nginx.log/mmdb/release zip/build_out
+all ignored). Left stray `ngnix_test.txt` untracked. 48 files, +7307/-197.
+**Decided:** Branched from local 8461bdd (behind origin/rule/apache); the content that
+matters is the working tree (v4), so the new branch is an independent, clean snapshot.
+**Open:** PR not opened — `https://github.com/sankettaware16/foss-soc-engine/pull/new/feature/web-ui`.
+(This journal entry was written after the push, so it's an uncommitted change on top.)
+
 ## 2026-06-20 — Merged the Web UI version into this working dir (v3 → v4)
 **Asked:** Upgrade this dir to the latest "v4" version (the one that added a Web UI),
 from a parallel copy at `~/code/projectTLSOC/foss-soc-engine`.
