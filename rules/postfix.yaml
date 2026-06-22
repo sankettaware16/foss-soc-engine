@@ -13,22 +13,22 @@ patterns:
 
   # Internal Sender
   - regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>iitb\.ac\.in))>'
-    mapping: { "sender": "email.from", "s_domain": "email.sender_domain" }
+    mapping: { "sender": "email.from.address", "s_domain": "email.sender_domain" }
     static: { "email.internal_sender": true, "email.sender_type": "internal" }
 
   # External Sender
   - regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>(?!iitb\.ac\.in)[^>]+))>'
-    mapping: { "sender": "email.from", "s_domain": "email.sender_domain" }
+    mapping: { "sender": "email.from.address", "s_domain": "email.sender_domain" }
     static: { "email.internal_sender": false, "email.sender_type": "external" }
 
   # Internal Recipient
   - regex: 'to=<(?P<recipient>[^@]+@(?P<r_domain>iitb\.ac\.in))>.*status=(?P<status>[a-z]+)'
-    mapping: { "recipient": "email.to", "r_domain": "email.recipient_domain", "status": "event.outcome" }
+    mapping: { "recipient": "email.to.address", "r_domain": "email.recipient_domain", "status": "event.outcome" }
     static: { "email.external_recipient": false, "email.recipient_type": "internal" }
 
   # External Recipient
   - regex: 'to=<(?P<recipient>[^@]+@(?P<r_domain>(?!iitb\.ac\.in)[^>]+))>.*status=(?P<status>[a-z]+)'
-    mapping: { "recipient": "email.to", "r_domain": "email.recipient_domain", "status": "event.outcome" }
+    mapping: { "recipient": "email.to.address", "r_domain": "email.recipient_domain", "status": "event.outcome" }
     static: { "email.external_recipient": true, "email.recipient_type": "external" }
 
   - regex: 'relay=(?P<relay_host>[^\[]+)\[(?P<relay_ip>[\d\.]+)\]'
@@ -62,7 +62,7 @@ patterns:
     mapping: { "message_id": "email.message_id" }
 
   - regex: 'from=<(?P<sender>[^>]+)>, size=(?P<size>\d+), nrcpt=(?P<recipient_count>\d+)'
-    mapping: { "sender": "email.from", "size": "email.size|int", "recipient_count": "email.recipient_count|int" }
+    mapping: { "sender": "email.from.address", "size": "email.size|int", "recipient_count": "email.recipient_count|int" }
 
   - regex: 'dsn=(?P<dsn>[245]\.[\d\.]+)'
     mapping: { "dsn": "email.dsn" }
@@ -80,7 +80,7 @@ patterns:
     static: { "email.delivery.type": "local" }
 
   - regex: 'NOQUEUE: reject: RCPT from (?P<client_host>[^\[]+)\[(?P<ip>[\d\.]+)\]: (?P<code>\d+ \d+\.\d+\.\d+) (?P<reason>.*?); from=<(?P<sender>[^>]+)> to=<(?P<recipient>[^>]+)>'
-    mapping: { "client_host": "source.domain", "ip": "source.ip", "code": "event.code", "reason": "event.reason", "sender": "email.from", "recipient": "email.to" }
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "code": "event.code", "reason": "event.reason", "sender": "email.from.address", "recipient": "email.to.address" }
     static: { "event.action": "smtp_reject", "event.outcome": "failure" }
 
   - regex: 'greylisting'

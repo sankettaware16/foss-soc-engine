@@ -1,0 +1,382 @@
+pattern_name: "nginx_access"
+
+strategy: "multi_match"
+
+patterns:
+
+  # ============================================================
+  # STANDARD ACCESS LOG
+  # ============================================================
+
+  - name: "nginx_access"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      ip: "source.ip"
+
+      method: "http.request.method"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      path: "url.path"
+      query: "url.query"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+
+
+  # ============================================================
+  # ACCESS LOG WITH USER FIELD
+  # ============================================================
+
+  - name: "nginx_access_user"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      ip: "source.ip"
+      remote_user: "user.name"
+
+      method: "http.request.method"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      path: "url.path"
+      query: "url.query"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+
+
+  # ============================================================
+  # CONNECTION REFUSED
+  # ============================================================
+
+  - name: "nginx_upstream_refused"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(111: Connection refused\) while connecting to upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      upstream: "nginx.upstream"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      connection: "nginx.connection_id"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "upstream_connection_refused"
+      event.outcome: "failure"
+
+
+  # ============================================================
+  # CONNECTION TIMEOUT
+  # ============================================================
+
+  - name: "nginx_upstream_timeout"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(110: Connection timed out\) while connecting to upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"(?:, referrer: "(?P<referrer>[^"]+)")?'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      upstream: "nginx.upstream"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+      connection: "nginx.connection_id"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "upstream_timeout"
+      event.outcome: "failure"
+
+
+  # ============================================================
+  # UPSTREAM PREMATURE CLOSE
+  # ============================================================
+
+  - name: "nginx_upstream_premature_close"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while reading upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      upstream: "nginx.upstream"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      connection: "nginx.connection_id"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "upstream_premature_close"
+      event.outcome: "failure"
+
+
+  # ============================================================
+  # SSL HANDSHAKE FAILURE
+  # ============================================================
+
+  - name: "nginx_ssl_failure"
+
+    regex: 'peer closed connection in SSL handshake'
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "ssl_handshake_failure"
+      event.outcome: "failure"
+      network.protocol: "https"
+
+
+  # ============================================================
+  # WORKER CONNECTION EXHAUSTION
+  # ============================================================
+
+  - name: "nginx_worker_exhausted"
+
+    regex: '(?P<worker_limit>\d+) worker_connections are not enough'
+
+    mapping:
+      worker_limit: "nginx.worker_connections.limit|int"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "worker_connections_exhausted"
+      event.outcome: "failure"
+
+
+  # ============================================================
+  # UPSTREAM CLOSED WHILE SENDING TO CLIENT
+  # ============================================================
+
+  - name: "nginx_upstream_closed_sending"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while sending to client, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"(?:, referrer: "(?P<referrer>[^"]+)")?'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      upstream: "nginx.upstream"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+      connection: "nginx.connection_id"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "upstream_closed_while_sending"
+      event.outcome: "failure"
+
+
+  # ============================================================
+  # UPSTREAM CLOSED WHILE READING RESPONSE HEADER
+  # ============================================================
+
+  - name: "nginx_upstream_closed_header"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while reading response header from upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"(?:, referrer: "(?P<referrer>[^"]+)")?'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      upstream: "nginx.upstream"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+      connection: "nginx.connection_id"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "upstream_closed_header"
+      event.outcome: "failure"
+
+
+  # ============================================================
+  # RSYSLOG MESSAGE REPEATED WRAPPER
+  # ============================================================
+
+  - name: "nginx_message_repeated"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"\]'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      repeat_count: "event.repeat_count|int"
+
+      ip: "source.ip"
+      remote_user: "user.name"
+
+      method: "http.request.method"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      path: "url.path"
+      query: "url.query"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+      event.reason: "rsyslog_message_repeated"
+
+
+  # ============================================================
+  # RSYSLOG REPEATED NGINX ERROR
+  # ============================================================
+
+  - name: "nginx_error_repeated"
+
+    regex: '(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(110: Connection timed out\) while connecting to upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"\]'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      repeat_count: "event.repeat_count|int"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      upstream: "nginx.upstream"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      connection: "nginx.connection_id"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "upstream_timeout_repeated"
+      event.outcome: "failure"
+      event.reason: "rsyslog_message_repeated"

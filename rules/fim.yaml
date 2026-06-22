@@ -12,7 +12,7 @@ mapping:
 
   file_path: "file.path"
   owner: "file.owner"
-  owner_uid: "file.owner_uid"
+  owner_uid: "file.uid"
   mode: "file.mode"
 
 static:

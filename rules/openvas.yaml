@@ -18,7 +18,7 @@ mapping:
   # 3. Severity & Confidence
   "threat": "vulnerability.threat"
   "severity": "vulnerability.severity|float"
-  "nvt/cvss_base": "vulnerability.cvss.base_score|float"
+  "nvt/cvss_base": "vulnerability.score.base|float"
   "qod/value": "vulnerability.confidence|int"            # Quality of Detection (Filters out False Positives)
 
   # 4. Descriptions & Remediation
