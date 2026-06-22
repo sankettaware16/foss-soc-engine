@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""
+Build the FOSS SOC Engine Web UI into a single self-contained executable and
+assemble a ready-to-distribute folder.
+
+    python webui/build_exe.py
+
+What you get (under  release/FOSS-SOC-UI/ ):
+
+    FOSS-SOC-UI.exe      <- double-click to run (no Python needed)
+    config.yaml          <- editable
+    rules/               <- editable parser rules
+    examples/            <- sample logs
+    database/            <- drop GeoLite2-City.mmdb here (optional)
+    WEB_UI_GUIDE.md      <- how to use it
+
+Zip that folder and hand it to a tester: "unzip, double-click the .exe".
+The .exe is OS-specific - build it on the OS you want to ship to (run this on
+Windows to get the Windows .exe, on Linux for a Linux binary, etc).
+"""
+
+import os
+import sys
+import shutil
+import subprocess
+
+HERE = os.path.dirname(os.path.abspath(__file__))   # webui/
+ROOT = os.path.dirname(HERE)                          # repo root
+SPEC = os.path.join(HERE, "foss-soc-ui.spec")
+BUILD_OUT = os.path.join(ROOT, "build_out")
+DISTPATH = os.path.join(BUILD_OUT, "dist")
+WORKPATH = os.path.join(BUILD_OUT, "build")
+RELEASE = os.path.join(ROOT, "release", "FOSS-SOC-UI")
+
+EXE_NAME = "FOSS-SOC-UI.exe" if os.name == "nt" else "FOSS-SOC-UI"
+
+
+def ensure_pyinstaller():
+    try:
+        import PyInstaller  # noqa: F401
+        return
+    except ImportError:
+        print("PyInstaller not found - installing it...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+
+
+def run_pyinstaller():
+    print("\n=== Building executable with PyInstaller ===")
+    subprocess.check_call([
+        sys.executable, "-m", "PyInstaller", "--noconfirm",
+        "--distpath", DISTPATH, "--workpath", WORKPATH, SPEC,
+    ])
+
+
+def copytree(src, dst):
+    if os.path.isdir(src):
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+
+
+def assemble():
+    print("\n=== Assembling release folder ===")
+    exe_src = os.path.join(DISTPATH, EXE_NAME)
+    if not os.path.exists(exe_src):
+        sys.exit(f"Build failed: {exe_src} not found")
+
+    if os.path.exists(RELEASE):
+        shutil.rmtree(RELEASE)
+    os.makedirs(RELEASE)
+
+    shutil.copy2(exe_src, os.path.join(RELEASE, EXE_NAME))
+    copytree(os.path.join(ROOT, "rules"), os.path.join(RELEASE, "rules"))
+    copytree(os.path.join(ROOT, "examples"), os.path.join(RELEASE, "examples"))
+
+    cfg = os.path.join(ROOT, "config.yaml")
+    if os.path.exists(cfg):
+        shutil.copy2(cfg, os.path.join(RELEASE, "config.yaml"))
+
+    os.makedirs(os.path.join(RELEASE, "database"), exist_ok=True)
+    # leave a hint so testers know what goes there
+    with open(os.path.join(RELEASE, "database", "PUT-GeoLite2-City.mmdb-HERE.txt"),
+              "w", encoding="utf-8") as f:
+        f.write("GeoIP is optional. To enable geo enrichment, place your\n"
+                "GeoLite2-City.mmdb file in this folder and set geoip.enabled: true\n"
+                "in config.yaml. The UI works fine without it.\n")
+
+    for doc in ("WEB_UI_GUIDE.md", "README.md"):
+        p = os.path.join(ROOT, doc)
+        if os.path.exists(p):
+            shutil.copy2(p, os.path.join(RELEASE, doc))
+
+    print("\n  Done.")
+    print(f"  Release folder: {RELEASE}")
+    print(f"  Run it:         {os.path.join(RELEASE, EXE_NAME)}")
+    print("  Zip that folder and share it. Testers just unzip + double-click.\n")
+
+
+def main():
+    ensure_pyinstaller()
+    run_pyinstaller()
+    assemble()
+
+
+if __name__ == "__main__":
+    main()

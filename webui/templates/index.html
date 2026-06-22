@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FOSS SOC Engine - Console</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <!-- animated liquid-glass background -->
+  <div class="bg">
+    <span class="orb orb-1"></span>
+    <span class="orb orb-2"></span>
+    <span class="orb orb-3"></span>
+    <span class="orb orb-4"></span>
+  </div>
+
+  <div class="shell">
+    <!-- ───────────────────────── Sidebar ───────────────────────── -->
+    <aside class="sidebar glass">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="shieldg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"></stop>
+                <stop offset="1" stop-color="#eaf0ff" stop-opacity="0.9"></stop>
+              </linearGradient>
+            </defs>
+            <path d="M12 2.5l7.5 3.2v5c0 4.7-3.2 8-7.5 9.6-4.3-1.6-7.5-4.9-7.5-9.6v-5z"
+                  fill="url(#shieldg)" stroke="#ffffff" stroke-width="0.4" stroke-opacity="0.6"></path>
+            <path d="M8.6 12.2l2.4 2.4 4.6-5" fill="none" stroke="#5b6fd8"
+                  stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>FOSS SOC</h1>
+          <span>log parsing engine</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg></span>Dashboard</button>
+        <button class="nav-item" data-view="monitor">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5 7 5-15L17 12h4"/></svg></span>Monitor<span class="live-dot" id="nav-live-dot"></span></button>
+        <button class="nav-item" data-view="test">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.1 12.9a1 1 0 0 0 .8 1.6H11l-1 7.5 9-11a1 1 0 0 0-.8-1.6H12z"/></svg></span>Test Log</button>
+        <button class="nav-item" data-view="rules">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9.5 13L8 14.5 9.5 16"/><path d="M14.5 13L16 14.5 14.5 16"/></svg></span>Rules</button>
+        <button class="nav-item" data-view="config">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1.5" y1="14" x2="6.5" y2="14"/><line x1="9.5" y1="8" x2="14.5" y2="8"/><line x1="17.5" y1="16" x2="22.5" y2="16"/></svg></span>Config</button>
+        <button class="nav-item" data-view="ecs">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.7 1.8L21.5 17.5 19.7 18.2 19 20l-.7-1.8L16.5 17.5l1.8-.7z"/></svg></span>ECS Helper</button>
+        <button class="nav-item" data-view="preflight">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2.5L11 13"/><path d="M21.5 2.5l-6.5 19-3.8-8.7L2.5 9z"/></svg></span>Preflight</button>
+      </nav>
+
+      <div class="side-foot">
+        <div id="health-pills" class="pills"></div>
+        <a class="help-link" href="#" data-view="help">How to use ↗</a>
+      </div>
+    </aside>
+
+    <!-- ───────────────────────── Main ───────────────────────── -->
+    <main class="main">
+      <header class="topbar glass">
+        <div class="topbar-title">
+          <h2 id="view-title">Dashboard</h2>
+          <p id="view-sub">Live overview of your parsing engine</p>
+        </div>
+        <div class="topbar-actions">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="status-text" class="status-text">connecting…</span>
+          <button id="refresh-btn" class="btn ghost" title="Refresh">⟳</button>
+        </div>
+      </header>
+
+      <!-- ============ DASHBOARD ============ -->
+      <section class="view active" id="view-dashboard">
+        <div class="grid stat-grid" id="stat-cards"></div>
+        <div class="grid two">
+          <div class="glass card">
+            <h3 class="card-h">Loaded rules</h3>
+            <div id="dash-rules" class="rule-chips"></div>
+          </div>
+          <div class="glass card">
+            <h3 class="card-h">Engine capabilities</h3>
+            <div id="dash-caps" class="caps"></div>
+            <p class="muted small" style="margin-top:14px">
+              Local testing (log, rules, config, ECS) works without any of these.
+              They only matter for the live pipeline.
+            </p>
+          </div>
+        </div>
+        <div class="glass card" id="dash-errors-card" style="display:none">
+          <h3 class="card-h warn">Rule load errors</h3>
+          <div id="dash-errors" class="loglist"></div>
+        </div>
+      </section>
+
+      <!-- ============ MONITOR (live ops) ============ -->
+      <section class="view" id="view-monitor">
+        <div class="glass card mon-status" id="mon-status-card">
+          <div class="row between wrap">
+            <div class="row gap">
+              <span class="big-dot" id="mon-dot"></span>
+              <div>
+                <div class="mon-state" id="mon-state">Connecting…</div>
+                <div class="muted small" id="mon-substate">reading engine heartbeat…</div>
+              </div>
+            </div>
+            <div class="row gap wrap mon-meta" id="mon-meta"></div>
+            <div class="row gap">
+              <label class="check"><input type="checkbox" id="mon-auto" checked /> live</label>
+              <span class="muted small" id="mon-updated"></span>
+              <button id="mon-refresh" class="btn ghost small">⟳</button>
+            </div>
+          </div>
+          <div id="mon-control" class="mon-control" style="display:none"></div>
+        </div>
+
+        <div class="grid stat-grid" id="mon-stats"></div>
+
+        <div class="grid two">
+          <div class="glass card">
+            <div class="row between">
+              <h3 class="card-h">Throughput (EPS)</h3>
+              <span class="muted small" id="mon-eps-now"></span>
+            </div>
+            <canvas id="mon-spark" class="spark" height="90"></canvas>
+          </div>
+          <div class="glass card">
+            <h3 class="card-h">System resources</h3>
+            <div id="mon-sys" class="sysmetrics"></div>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="glass card">
+            <h3 class="card-h">Rules in use <span class="count" id="mon-rule-count"></span></h3>
+            <div class="tbl-wrap"><table class="tbl" id="mon-rules">
+              <thead><tr><th>Rule</th><th>Events</th><th>No&nbsp;match</th><th>Buffered</th><th>Errors</th></tr></thead>
+              <tbody></tbody></table></div>
+          </div>
+          <div class="glass card">
+            <h3 class="card-h">Workers <span class="count" id="mon-worker-count"></span></h3>
+            <div class="tbl-wrap"><table class="tbl" id="mon-workers">
+              <thead><tr><th>#</th><th>PID</th><th>EPS</th><th>Processed</th><th>Uptime</th><th></th></tr></thead>
+              <tbody></tbody></table></div>
+          </div>
+        </div>
+
+        <div class="glass card">
+          <div class="row between">
+            <h3 class="card-h warn">Recent errors / DLQ</h3>
+            <button id="mon-dlq-load" class="btn ghost small">Load latest</button>
+          </div>
+          <div id="mon-dlq" class="loglist"></div>
+        </div>
+      </section>
+
+      <!-- ============ TEST LOG ============ -->
+      <section class="view" id="view-test">
+        <div class="glass card">
+          <div class="row gap wrap">
+            <div class="field grow">
+              <label>Parser</label>
+              <select id="test-parser"></select>
+            </div>
+            <div class="field">
+              <label>Max lines</label>
+              <input id="test-limit" type="number" value="20000" min="1" />
+            </div>
+            <div class="seg">
+              <button class="seg-btn active" data-mode="paste">Paste text</button>
+              <button class="seg-btn" data-mode="file">Upload file</button>
+            </div>
+          </div>
+
+          <div id="test-paste-pane">
+            <textarea id="test-text" class="code-area" spellcheck="false"
+              placeholder="Paste one or more raw log lines here…"></textarea>
+          </div>
+
+          <div id="test-file-pane" style="display:none">
+            <label class="dropzone" id="dropzone">
+              <input type="file" id="test-file" hidden />
+              <div class="dz-inner">
+                <div class="dz-icon">⬆</div>
+                <div id="dz-text">Click to choose a log file, or drop it here</div>
+              </div>
+            </label>
+          </div>
+
+          <div class="row gap" style="margin-top:14px">
+            <button id="run-test" class="btn primary">Run test ⚡</button>
+            <button id="load-sample" class="btn ghost">Load sample lines</button>
+            <span id="test-hint" class="muted small"></span>
+          </div>
+        </div>
+
+        <div id="test-results" style="display:none">
+          <div class="grid stat-grid" id="test-stats"></div>
+          <div class="glass card">
+            <div class="row between">
+              <h3 class="card-h">Parsed events <span id="evt-count" class="count"></span></h3>
+              <button id="copy-events" class="btn ghost small">Copy JSON</button>
+            </div>
+            <div id="test-events" class="events"></div>
+          </div>
+          <div class="glass card" id="test-samples-card" style="display:none">
+            <h3 class="card-h warn">Unparsed samples</h3>
+            <div id="test-samples" class="loglist"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ RULES ============ -->
+      <section class="view" id="view-rules">
+        <div class="split">
+          <div class="glass card rules-list">
+            <div class="row between">
+              <h3 class="card-h">Parser rules</h3>
+              <button id="new-rule" class="btn primary small">+ New</button>
+            </div>
+            <div id="rule-items" class="rule-items"></div>
+          </div>
+
+          <div class="glass card rule-editor">
+            <div class="row gap wrap">
+              <div class="field grow">
+                <label>File name</label>
+                <input id="rule-filename" placeholder="myparser.yaml" />
+              </div>
+              <div class="field">
+                <label>Template</label>
+                <select id="rule-template">
+                  <option value="">— insert template —</option>
+                  <option value="stateless">stateless (single regex)</option>
+                  <option value="multi_match">multi_match (several regex)</option>
+                  <option value="stateful">stateful (Redis-correlated)</option>
+                  <option value="json_map">json_map (JSON logs)</option>
+                  <option value="xml_xpath">xml_xpath (XML logs)</option>
+                </select>
+              </div>
+            </div>
+            <textarea id="rule-content" class="code-area tall" spellcheck="false"
+              placeholder="Select a rule on the left, or start a new one…"></textarea>
+            <div class="row gap" style="margin-top:12px">
+              <button id="save-rule" class="btn primary">Save rule</button>
+              <button id="check-rule" class="btn ghost">Check ECS fields</button>
+              <button id="delete-rule" class="btn danger">Delete</button>
+              <span id="rule-msg" class="muted small"></span>
+            </div>
+            <div id="rule-ecs" class="ecs-report"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ CONFIG ============ -->
+      <section class="view" id="view-config">
+        <div class="glass card">
+          <div class="row between">
+            <h3 class="card-h">config.yaml</h3>
+            <div class="row gap">
+              <button id="save-config" class="btn primary small">Save</button>
+              <button id="validate-config" class="btn ghost small">Validate</button>
+            </div>
+          </div>
+          <textarea id="config-content" class="code-area tall" spellcheck="false"></textarea>
+          <span id="config-msg" class="muted small"></span>
+        </div>
+        <div class="glass card" id="config-report-card" style="display:none">
+          <h3 class="card-h">Validation result</h3>
+          <div id="config-report" class="loglist"></div>
+        </div>
+      </section>
+
+      <!-- ============ ECS HELPER ============ -->
+      <section class="view" id="view-ecs">
+        <div class="grid two">
+          <div class="glass card">
+            <h3 class="card-h">Check / autocorrect a field</h3>
+            <p class="muted small">Type a field name from your rule — we tell you if it is real ECS, or what it should be.</p>
+            <div class="row gap" style="margin-top:8px">
+              <input id="ecs-field" class="grow" placeholder="e.g. srcip, status, email.from" />
+              <button id="ecs-classify" class="btn primary">Check</button>
+            </div>
+            <div id="ecs-classify-out" class="ecs-out"></div>
+          </div>
+          <div class="glass card">
+            <h3 class="card-h">Find a field by concept</h3>
+            <p class="muted small">Search ECS by plain words: "country", "http status", "mail".</p>
+            <div class="row gap" style="margin-top:8px">
+              <input id="ecs-search" class="grow" placeholder="e.g. user agent" />
+              <button id="ecs-find" class="btn primary">Search</button>
+            </div>
+            <div id="ecs-find-out" class="ecs-out"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PREFLIGHT ============ -->
+      <section class="view" id="view-preflight">
+        <div class="glass card">
+          <h3 class="card-h">Pre-flight readiness check</h3>
+          <p class="muted small">
+            Static checks (config, paths, rules, ECS, mapping) always run.
+            Live checks (Kafka / Redis / TCP) need those services reachable from this machine.
+          </p>
+          <div class="row gap wrap" style="margin-top:12px">
+            <label class="check"><input type="checkbox" id="pf-live" checked /> include live checks</label>
+            <div class="field">
+              <label>Timeout (s)</label>
+              <input id="pf-timeout" type="number" value="4" min="1" style="width:80px" />
+            </div>
+            <button id="run-preflight" class="btn primary">Run preflight ✈</button>
+            <span id="pf-msg" class="muted small"></span>
+          </div>
+          <div id="pf-report" class="loglist" style="margin-top:16px"></div>
+        </div>
+      </section>
+
+      <!-- ============ HELP ============ -->
+      <section class="view" id="view-help">
+        <div class="glass card help-card">
+          <h3 class="card-h">Using the console</h3>
+          <ol class="help-steps">
+            <li><b>Test Log</b> — paste log lines or upload a file, pick a parser (or <code>AUTO</code> to let the engine find the right one), and Run. You get the parsed ECS JSON plus a parsed / no-match summary.</li>
+            <li><b>Rules</b> — click a rule to view/edit its YAML. Use a <b>template</b> to start a new parser, <b>Check ECS fields</b> to validate field names, then <b>Save</b>.</li>
+            <li><b>Config</b> — edit <code>config.yaml</code> and <b>Validate</b> it (same checks as the CLI validator) before going live.</li>
+            <li><b>ECS Helper</b> — look up the correct ECS field for any concept, or autocorrect a wrong name.</li>
+            <li><b>Preflight</b> — when you are ready to connect Kafka/Redis, run the live readiness check.</li>
+          </ol>
+          <p class="muted small">Full written guide: <code>WEB_UI_GUIDE.md</code> in the application folder.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- toast -->
+  <div id="toast" class="toast"></div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
