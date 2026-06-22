@@ -25,6 +25,37 @@ batch:
   size: 1000
   timeout_sec: 5
 
+runtime:
+  # -------------------------------------------------------------------------
+  # PARALLEL WORKERS
+  # -------------------------------------------------------------------------
+  # How many parser processes to run. Each worker joins the SAME Kafka
+  # consumer group, so Kafka automatically spreads topic partitions across
+  # them - this is how the engine uses every CPU core.
+  #
+  #   auto  -> use all CPU cores (recommended for production)
+  #   1     -> single process, logs to console (easiest for debugging)
+  #   <N>   -> exactly N workers
+  #
+  # IMPORTANT: create at least as many partitions per Kafka topic as workers,
+  # otherwise the extra workers sit idle (Kafka gives each partition to one
+  # consumer). You can also run workers across multiple machines: just point
+  # them at the same bootstrap_servers and group_id.
+  workers: auto
+
+  # How often (seconds) each worker writes its live stats file that the Web UI
+  # Monitor reads. Lower = more real-time EPS/metrics; cost is negligible.
+  # Default 2. Raise it (e.g. 10) if you want fewer/lighter stat writes.
+  metrics_interval_sec: 2
+
+output:
+  # Keep output file handles open and write in large batches (always on).
+  # fsync: force every batch to physical disk (safer on power loss, slower).
+  fsync: false
+  # rotate_mb: roll each output file once it reaches this size, in MB.
+  #   0 -> never roll here (let logrotate / Filebeat handle rotation).
+  rotate_mb: 0
+
 paths:
   # Where to save the parsed JSON files
   output_dir: "/var/log/soc_output/"

@@ -1,14 +1,38 @@
 import re
-import json
-import redis
+import time
 import logging
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from utils.geoip import GeoIPClient
+from utils import fastjson
 
-# Initialize Redis connection
-r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+# Initialize Redis connection.
+# redis is only needed by the 'stateful' strategy. We import it lazily so the
+# rest of the engine (and the web UI / local testing tools) can run on machines
+# where the redis package is not installed. When absent, stateful correlation
+# is disabled and the _process_stateful guards fall back gracefully.
+try:
+    import redis
+    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+except Exception:
+    redis = None
+    r = None
+
 logger = logging.getLogger("soc-engine")
+
+# Ingestion timestamp cache. datetime.now().isoformat() is surprisingly costly
+# when called per event; the @timestamp here is ingestion time (the real event
+# time comes from the parsed log line via rule mapping), so 1-second resolution
+# is plenty. Cached per process.
+_ts_cache = {"t": 0.0, "v": ""}
+
+
+def _now_iso():
+    now = time.time()
+    if now - _ts_cache["t"] >= 1.0:
+        _ts_cache["v"] = datetime.fromtimestamp(now, timezone.utc).isoformat()
+        _ts_cache["t"] = now
+    return _ts_cache["v"]
 
 class UniversalEngine:
     def __init__(self, rule_config):
@@ -116,8 +140,8 @@ class UniversalEngine:
 
     def _process_json_map(self, log_input):
         try:
-            data = json.loads(log_input.raw)
-        except json.JSONDecodeError:
+            data = fastjson.loads(log_input.raw)
+        except (ValueError, TypeError):
             return None
 
         event = self._init_event(log_input)
@@ -219,7 +243,7 @@ class UniversalEngine:
             self.last_redis_error = f"redis_get_failed: {e}"
             return None
 
-        event = json.loads(state) if state else self._init_event(log_input)
+        event = fastjson.loads(state) if state else self._init_event(log_input)
         if not state:
             event['event']['id'] = trx_id
             event['raw_buffer'] = []
@@ -246,7 +270,7 @@ class UniversalEngine:
             return self._enrich_event(event)
         else:
             try:
-                r.set(redis_key, json.dumps(event), ex=300)
+                r.set(redis_key, fastjson.dumps(event), ex=300)
             except Exception as e:
                 self.last_redis_error = f"redis_set_failed: {e}"
                 return None
@@ -254,7 +278,7 @@ class UniversalEngine:
 
     def _init_event(self, log_input):
         base_event = {
-            "@timestamp": datetime.now(timezone.utc).isoformat(),
+            "@timestamp": _now_iso(),
             "event": {"module": log_input.program},
             "observer": log_input.meta
         }
