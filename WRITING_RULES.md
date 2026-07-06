@@ -245,18 +245,46 @@ the RAW LOG SAMPLES I paste at the end and output ONE ready-to-use YAML parser
 rule for this engine. Output ONLY the YAML inside a single code block — no
 explanation before or after.
 
+# BEFORE YOU WRITE (do this analysis silently, then output only YAML)
+1. INVENTORY EVERY LINE SHAPE. Scan all samples and list, to yourself, each
+   DISTINCT format present — not just the most common one. Real logs from one
+   source routinely mix many shapes: success vs denied vs error vs malformed,
+   CONNECT vs GET/POST, IP destination vs hostname destination, with-user vs
+   without-user, single-line vs multi-line. You MUST produce a pattern for every
+   shape that appears, however rare. A rule that only handles the common lines is
+   WRONG and will silently drop security-relevant events (blocks, failures).
+2. Pick the strategy by the shape of the logs (below). If there is more than one
+   line format, you almost always want multi_match.
+3. Note the LEADING TIMESTAMP. The samples I give you may be exported/older and
+   can use a DIFFERENT timestamp format than live production (e.g. samples use
+   "Mar 12 00:04:56" but production emits ISO 8601 "2026-07-06T17:52:30+00:00").
+   Do NOT hard-code one timestamp format. Capture the leading timestamp token(s)
+   with a permissive group that accepts BOTH, e.g.:
+     (?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)
+   (syslog "Mon DD HH:MM:SS" OR any single non-space ISO token). The rest of the
+   line after the timestamp is normally identical between samples and production.
+
 # OUTPUT FORMAT
 Produce a YAML file with these keys:
-- pattern_name: a short unique snake_case name for this log source (string)
-- strategy: one of stateless | multi_match | stateful | json_map | xml_xpath
+- pattern_name: a short unique snake_case name, AS A QUOTED STRING.
+- strategy: one of stateless | multi_match | stateful | json_map | xml_xpath,
+  AS A QUOTED STRING.
 - the strategy-specific keys (below)
 - mapping: maps each captured value to an ECS field (see ECS RULES)
 - static: (optional) fixed ECS fields added to every event
 
+IMPORTANT quoting rule: the values of pattern_name and strategy MUST be wrapped in
+double quotes, e.g.:
+  pattern_name: "squid_proxy_access"
+  strategy: "multi_match"
+Bare/unquoted values are not accepted by the loader.
+
 Choose the strategy by the shape of the logs:
-- stateless  : single-line, one consistent format. Keys: regex, mapping, static.
-- multi_match: one source with several line formats. Keys: patterns: a list of
-               {name, regex, mapping, static}. Order matters; first match wins.
+- stateless  : single-line, ONE consistent format only. Keys: regex, mapping, static.
+- multi_match: one source with several line formats (THE COMMON CASE for real
+               device logs). Keys: patterns: a list of {name, regex, mapping,
+               static}. Order matters; FIRST match wins, so put the most specific
+               patterns first and more general ones last.
 - stateful   : one event spread over multiple lines sharing a transaction id.
                Keys: id_regex (MUST contain a named group `id`), end_signal
                (a substring that marks the final line), patterns: list of
@@ -268,7 +296,16 @@ Choose the strategy by the shape of the logs:
 
 # REGEX RULES
 - Use Python `re` syntax with NAMED groups: (?P<name>...).
-- Make patterns specific; escape literals; prefer [^"]* / \S+ over greedy .*.
+- ANCHOR every full-line regex with ^ at the start and $ at the end. This stops a
+  loose pattern from mis-capturing a different line shape.
+- Make patterns specific; escape literals; prefer [^"]* / \S+ / [^:\s]+ over
+  greedy .*.
+- When a field can be EITHER an IP or a hostname (e.g. a destination), write TWO
+  patterns: one with an IP group (\d+\.\d+\.\d+\.\d+) mapped to the *.ip field,
+  one with a hostname group ([A-Za-z0-9][A-Za-z0-9.\-]*) mapped to the *.domain
+  field. Put the IP variant first.
+- Ports, ids, byte counts vary widely (0, 443, 5228, 30192, huge values); match
+  them generically with \d+ — never assume a fixed value.
 - The group name (left side of mapping) is arbitrary; the ECS field (right side)
   must be valid ECS.
 
@@ -277,18 +314,28 @@ Every value on the RIGHT side of mapping, and every key under static, MUST be a
 valid Elastic Common Schema (ECS) field. Add `|int` or `|float` to the ECS field
 to coerce numbers, e.g. "http.response.status_code|int".
 Use these common ECS fields where they fit:
-  source.ip, source.port, source.domain, destination.ip, destination.port,
-  host.name, user.name, user_agent.original,
+  source.ip, source.port, source.domain, source.bytes,
+  destination.ip, destination.port, destination.domain, destination.address,
+  destination.bytes, host.name, user.name, user_agent.original,
   http.request.method, http.response.status_code, http.request.referrer,
-  http.response.body.bytes, url.path, url.query, url.domain,
+  http.response.body.bytes, http.response.mime_type, url.original, url.path,
+  url.query, url.domain,
   event.action, event.category, event.type, event.kind, event.outcome,
-  event.reason, event.code, event.severity, event.created, log.level,
-  network.protocol, network.transport, tls.version, tls.cipher,
+  event.reason, event.code, event.severity, event.created, event.duration,
+  log.level, network.protocol, network.transport, tls.version, tls.cipher,
   file.path, file.owner, file.mode, file.uid,
   process.pid, process.name, process.command_line,
   email.from.address, email.to.address, email.message_id,
   rule.id, rule.name, vulnerability.id, vulnerability.severity,
-  vulnerability.score.base, observer.vendor, observer.product, service.type
+  vulnerability.score.base, observer.vendor, observer.product, observer.type,
+  observer.ip, service.type
+Guidance on a few:
+- destination.address holds EITHER an IP or a hostname when you can't tell which —
+  use it for denied/error lines where the target may be either.
+- network.protocol is the app protocol (http, tls, smtp...); network.transport is
+  tcp/udp. A CONNECT/tunnel is usually protocol "tls", transport "tcp".
+- Directional bytes: client→server is source.bytes; server→client (an HTTP
+  response body) is destination.bytes or http.response.body.bytes.
 Common fixes you must apply (never output the left form):
   srcip/client_ip -> source.ip ; dstip -> destination.ip ;
   status/status_code -> http.response.status_code ; method -> http.request.method ;
@@ -297,8 +344,14 @@ Common fixes you must apply (never output the left form):
   proto -> network.protocol ; uri -> url.path
 event.outcome must be one of: success, failure, unknown.
 If — and only if — ECS has NO suitable field for a value, create a custom field
-under a namespace named after the product (e.g. myapp.session_token). Never invent
-new sub-fields inside ECS field sets like event.* or source.*.
+under a namespace named after the product (e.g. squid.original_destination). Never
+invent new sub-fields inside ECS field sets like event.* or source.*.
+
+# COVERAGE SELF-CHECK (must hold before you output)
+- Mentally run EVERY raw sample line I gave you against your patterns. Each line
+  must match exactly one pattern. If any sample line matches none of your
+  patterns, add or fix a pattern until all are covered.
+- Do not leave out rare shapes (denied, 503, 000/malformed, non-standard ports).
 
 # AFTER THE YAML
 On the final commented line of the YAML, suggest the config.yaml program_mapping
