@@ -1,0 +1,43 @@
+# systemd unit for the FOSS SOC Engine Web UI.
+#
+# Install (run from the repo root on the Ubuntu server):
+#   sudo cp webui/foss-soc-ui.service /etc/systemd/system/
+#   # edit the paths/user/IP below to match your machine, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now foss-soc-ui
+#   systemctl status foss-soc-ui          # check it is running
+#   journalctl -u foss-soc-ui -f          # watch its logs
+#
+# Then open  http://<server-ip>:8600  from any machine on the network.
+
+[Unit]
+Description=FOSS SOC Engine - Web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# --- EDIT THESE ---
+# The Linux user to run as (create a non-root one ideally), and the repo path.
+User=soc
+WorkingDirectory=/opt/foss-soc-engine
+
+# Listen on all interfaces so the UI is reachable over the network.
+Environment=SOC_UI_HOST=0.0.0.0
+Environment=SOC_UI_PORT=8600
+Environment=SOC_UI_NO_BROWSER=1
+
+# Use the private UI virtual-env created by start-soc-ui.sh (recommended), or
+# change this to a plain "python3" if you installed Flask/PyYAML system-wide.
+ExecStart=/opt/foss-soc-engine/.venv-ui/bin/python /opt/foss-soc-engine/webui/app.py
+
+Restart=on-failure
+RestartSec=3
+
+# Light hardening (optional, safe defaults)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

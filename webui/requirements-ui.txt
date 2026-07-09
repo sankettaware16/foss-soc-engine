@@ -1,0 +1,7 @@
+# Minimal dependencies for the FOSS SOC Engine Web UI.
+# These two have prebuilt wheels for Windows, Linux and macOS, so a plain
+# `pip install -r requirements-ui.txt` never needs a compiler. Everything else
+# the engine can use (redis, geoip2, kafka-python-ng, orjson) is OPTIONAL and the
+# UI degrades gracefully when it is absent.
+Flask>=2.3,<4.0
+PyYAML>=6.0.1
