@@ -36,12 +36,22 @@ ExecStart=$PYTHON_EXEC $CURRENT_DIR/main.py
 Restart=always
 RestartSec=5
 
+# Graceful shutdown: SIGTERM the supervisor, give workers time to flush to
+# disk and commit Kafka offsets before SIGKILL.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Allow many open output files (one per module per worker).
+LimitNOFILE=65536
+
 # Logging
 StandardOutput=journal
 StandardError=journal
 
-# Environment variables (Optional)
-# Environment=PYTHONUNBUFFERED=1
+# Number of parser workers ("auto" = all cores). Overrides config.yaml.
+# Environment=SOC_WORKERS=auto
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
