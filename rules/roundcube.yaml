@@ -2,10 +2,16 @@ pattern_name: "roundcube"
 
 strategy: "multi_match"
 
+# Roundcube log prefix: "[09-Jul-2026 13:31:48 +0530]: <session> ..."
+timestamp:
+  regex: '^\[(?P<ts>\d{1,2}-[A-Za-z]{3}-\d{4} \d{1,2}:\d{2}:\d{2}(?: [+-]\d{4})?)\]'
+  format: roundcube
+
 patterns:
   # 1. Failed Login
   # Log: <session> Failed login for user... from Proxy (X-Real-IP: Real)
   - name: "login_failed"
+    prematch: "Failed login"
     regex: 'Failed login for (?P<user>[^ ]+) from (?P<proxy_ip>[\d\.]+) \(X-Real-IP: (?P<real_ip>[\d\.]+)'
     mapping:
       user: "user.name"
@@ -19,6 +25,7 @@ patterns:
   # 2. Successful Login
   # Log: <session> Successful login for user... (ID: 41) from Proxy (X-Real-IP: Real)
   - name: "login_success"
+    prematch: "Successful login"
     regex: 'Successful login for (?P<user>[^ ]+) \(ID: \d+\) from (?P<proxy_ip>[\d\.]+) \(X-Real-IP: (?P<real_ip>[\d\.]+)'
     mapping:
       user: "user.name"

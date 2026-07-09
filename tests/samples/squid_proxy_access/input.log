@@ -1,0 +1,5 @@
+Jul  9 10:00:00 proxyhost (squid-1)[123]: 1752048000.123 45 10.0.0.5:51000 10.0.0.1:3128 TCP_TUNNEL/200 4321 CONNECT 142.250.2.1:443 - ORIGINAL_DST/142.250.2.1 -
+Jul  9 10:00:01 proxyhost (squid-1)[123]: 1752048001.500 12 10.0.0.5:51001 10.0.0.1:3128 TCP_MISS/200 999 GET http://example.com/x - ORIGINAL_DST/93.184.216.34 text/html
+Jul  9 10:00:02 proxyhost (squid-1)[123]: 1752048002.000 0 10.0.0.5:51002 -:- TCP_DENIED/403 3618 GET http://blocked.example/ - HIER_NONE/- text/html
+Jul  9 10:00:03 proxyhost (squid-1)[123]: 1752048003.250 5 10.0.0.5:51003 -:- NONE/400 3618 NONE error:invalid-request - HIER_NONE/- text/html
+Jul  9 10:00:04 proxyhost (squid-1)[123]: this line matches nothing

@@ -2,13 +2,24 @@ pattern_name: "nessus"
 
 strategy: "json_map"
 
+# scan_start is Unix epoch seconds (UTC by definition). Parsed properly here
+# instead of the old raw mapping to @timestamp, which produced a broken
+# list-typed value.
+timestamp:
+  field: info.scan_start
+  format: epoch
+
 mapping:
   # Scan metadata from info section
   info.uuid: "event.id"
   info.name: "event.dataset"
   info.policy: "rule.ruleset"
-  info.scan_start: "@timestamp"
-  info.scan_end: "event.end"
+  # Raw epoch SECONDS. ECS event.start/event.end are `date` fields and
+  # Elasticsearch reads a bare epoch int as MILLIseconds (= a 1970 date) —
+  # keep the raw values in custom numeric fields instead. @timestamp is
+  # already parsed from info.scan_start by the timestamp: block above.
+  info.scan_start: "nessus.scan_start_epoch"
+  info.scan_end: "nessus.scan_end_epoch"
   info.status: "event.outcome"
   info.targets: "destination.address"
   info.scanner_name: "observer.name"
@@ -18,21 +29,27 @@ mapping:
   vulnerabilities.*.plugin_id: "rule.id"
   vulnerabilities.*.plugin_name: "rule.name"
   vulnerabilities.*.plugin_family: "rule.category"
-  vulnerabilities.*.severity: "event.severity"
+  vulnerabilities.*.severity: "event.severity|int"
   vulnerabilities.*.score: "event.risk_score"
   vulnerabilities.*.vpr_score: "vulnerability.score.vpr"
   vulnerabilities.*.epss_score: "vulnerability.score.epss"
   vulnerabilities.*.cpe: "vulnerability.enumeration"
   vulnerabilities.*.count: "event.count"
   
-  # Host summary information
-  hosts.*.hostname: "host.ip"
+  # Host summary information.
+  #  - hostname goes to host.name (keyword): Nessus reports names OR IPs
+  #    here, and a non-IP value in the ip-typed host.ip field would make
+  #    Elasticsearch reject the whole document.
+  #  - per-severity counts live under nessus.* so they can never collide
+  #    with openvas's scalar vulnerability.severity (object-vs-float
+  #    mapping conflict in a shared index).
+  hosts.*.hostname: "host.name"
   hosts.*.host_id: "host.id"
-  hosts.*.critical: "vulnerability.severity.critical_count"
-  hosts.*.high: "vulnerability.severity.high_count"
-  hosts.*.medium: "vulnerability.severity.medium_count"
-  hosts.*.low: "vulnerability.severity.low_count"
-  hosts.*.info: "vulnerability.severity.info_count"
+  hosts.*.critical: "nessus.severity_counts.critical"
+  hosts.*.high: "nessus.severity_counts.high"
+  hosts.*.medium: "nessus.severity_counts.medium"
+  hosts.*.low: "nessus.severity_counts.low"
+  hosts.*.info: "nessus.severity_counts.info"
   hosts.*.score: "host.risk_score"
 
 static:

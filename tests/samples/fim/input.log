@@ -1,0 +1,2 @@
+{"action":"modified","file_path":"/etc/passwd","owner":"root","owner_uid":0,"mode":"0644"}
+{"action":"created","file_path":"/var/www/html/shell.php","owner":"www-data","owner_uid":33,"mode":"0755"}

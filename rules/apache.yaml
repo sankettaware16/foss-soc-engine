@@ -2,7 +2,17 @@ pattern_name: "apache_access"
 
 strategy: "stateless"
 
-regex: '(?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]+))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
+# Cheap gate: every access-log request line contains "HTTP/"
+prematch: "HTTP/"
+
+# Event time = the CLF timestamp in the request line (carries its own offset)
+timestamp:
+  group: timestamp
+  format: clf
+
+# Anchored: a CLF request line always STARTS with the client IP. The ^ also
+# kills the O(n^2) scan a leading unanchored quantifier costs on garbage lines.
+regex: '^(?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]+))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
 
 mapping:
 
