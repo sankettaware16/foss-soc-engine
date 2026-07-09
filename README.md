@@ -46,6 +46,15 @@ The engine supports multiple parsing strategies selectable per rule:
   Element/attribute mapping of XML documents (one event per repeated element)  
   Examples: OpenVAS and Nessus scanner exports, XML audit feeds
 
+### Fast matching at scale (prematch gate)
+Every `multi_match`/`stateful` pattern can declare a `prematch:` — a plain substring
+checked with a cheap `in` **before** the expensive regex runs. Almost all patterns are
+skipped instantly, so a rule can grow to hundreds of patterns without the linear
+regex-scan cost (a 500-pattern rule measures ~13× faster with prematch). It is purely
+an optimization — rules produce identical output with or without it — and the deploy
+validator also runs a **ReDoS lint** on every regex to reject catastrophic-backtracking
+shapes before they can stall a worker. See [WRITING_RULES.md](WRITING_RULES.md).
+
 ### Auto-Enrichment
 Automatically enriches events for public IP addresses — fully **offline** (one-time
 MaxMind database download, no per-lookup network calls), with per-process LRU caching:
@@ -95,6 +104,26 @@ engine on more machines with the same `group_id` — no code or rule changes.
 - Continuous health monitoring with throughput (EPS), error rate, and uptime tracking
 - Every event carries `ecs.version`, `event.ingested` and `event.timestamp_source`
 - Optional `orjson` acceleration (installed automatically; falls back to stdlib if absent)
+
+---
+
+## Three ways to use it
+
+The parsing engine is the same in every case — these are just different front-ends
+for **writing/testing rules, editing config, and watching the engine run**. Pick
+whichever fits your team. You are never locked into one.
+
+| # | Interface | Best for | Needs a terminal? |
+|---|---|---|---|
+| 1 | **Command line** (`main.py` + the `test_*` / `preflight` / `replicate` tools) | production servers, CI/CD, automation, power users | yes |
+| 2 | **Web UI** — a point-and-click browser console (secure login) | operators who want no terminal; a standalone box; a quick pilot | no |
+| 3 | **Kibana plugin** — the same console *inside* Kibana | teams already living in the ELK stack | no |
+
+- **The engine itself always runs from the command line** (`main.py`, usually under
+  systemd) — that is what consumes Kafka and writes ECS output. Interfaces 2 and 3 do
+  **not** run a second engine; they are consoles that edit the *same* rules/config and
+  read the *same* live stats. See [**Web UI**](#web-ui--browser-console-no-terminal)
+  and [**Kibana plugin**](#use-it-inside-kibana-elk-plugin) below.
 
 ---
 
@@ -173,26 +202,30 @@ The installer performs exactly two things:
 chmod +x install.sh
 ./install.sh
 ```
-3. Configure GeoIP Database
+3. (Optional) GeoIP / ASN databases
 
-The engine requires the MaxMind GeoLite2 City database.
-
-Download GeoLite2-City.mmdb from MaxMind
-
-Place it in the database/ directory or you it can be directly installed using install.sh if you provide keys to it
+Enrichment is **optional** — the engine runs fine without it (geo/ASN fields are
+simply skipped, never a crash). To enable it, put the MaxMind `.mmdb` files in
+`database/` as described in **[GeoIP + ASN Database Requirement](#geoip--asn-database-requirement)**
+above (`install.sh` fetches them for you if you export `MAXMIND_LICENSE_KEY`), then
+set `geoip.enabled: true` in `config.yaml`.
 
 ```
+# manual placement (if you didn't let install.sh download them):
 mv /path/to/GeoLite2-City.mmdb ./database/
+mv /path/to/GeoLite2-ASN.mmdb  ./database/
 ```
 
-Configuration
+4. Configure the engine
 
-Edit config.yaml to match your environment.
-```
+Edit `config.yaml` to match your environment (the shipped file is already a working
+template — you mainly change the Kafka connection and `program_mapping`):
+```yaml
 kafka:
   bootstrap_servers: ["localhost:9092"]
-  input_topic: "^(syslog|waf-logs|.*)$"
-  group_id: "soc-parser-v1"
+  input_topic: "soc-logs"          # a single topic, OR a regex like "linux|firewall|web"
+  group_id: "soc-parser-group"
+  auto_offset_reset: "latest"      # fresh group_id starts at newest (skips backlog)
 
 paths:
   output_dir: "/var/log/soc_output/"
@@ -204,25 +237,33 @@ program_mapping:
   modsec_audit: "modsec"
 
 ```
-install and setup redis
+`program_mapping` lets multiple source programs reuse a single rule (or a list
+of rules — see [chains](WRITING_RULES.md)).
+
+5. Install Redis  *(only needed if you use `stateful` rules, e.g. postfix)*
 ```
 sudo apt install redis-server -y
 sudo systemctl enable redis-server
 sudo systemctl start redis-server
 ```
-create log dir
+(Point the engine at a non-local Redis with the `redis:` block in `config.yaml`.)
+
+6. Create the output directory
 ```
 sudo mkdir -p /var/log/soc_output/
-sudo chown -R username:username /var/log/soc_output/ #if required
+sudo chown -R username:username /var/log/soc_output/   # if required
 ```
-Program mapping allows multiple source programs to reuse a single rule definition.
 
-**Shipping to Elasticsearch?** Load the bundled index template **before** the
-first event is indexed, so every field gets the right type (dates, IPs,
-geo_point, numbers) from day one — see
+7. (Recommended) Load the Elasticsearch index template
+
+If you ship to Elasticsearch, load the bundled index template **before the first
+event is indexed**, so every field gets the right type (dates, IPs, `geo_point`,
+numbers) from day one and mapping conflicts can't happen. Full instructions:
 [`elasticsearch/README.md`](elasticsearch/README.md).
 
-Usage
+---
+
+## Usage
 
 ### Pre-flight check (run this before starting the engine)
 
@@ -343,6 +384,94 @@ View live logs:
 ```
 journalctl -u foss-soc -f
 ```
+
+---
+
+## Web UI — browser console (no terminal)
+
+Everything you can do from the command line — test a log file, add/test a parser,
+edit and validate the config, ECS lookup, preflight, and a **live Monitor** of the
+running engine — is also available as a point-and-click browser console. It reuses
+the *real* engine code (never a second parser), so the UI and the CLI can never
+disagree. Full walkthrough for non-technical operators: **[WEB_UI_GUIDE.md](WEB_UI_GUIDE.md)**.
+
+**Start it (pick one):**
+
+```bash
+# A) Developers / Linux / macOS — from the repo:
+pip install -r webui/requirements-ui.txt
+python3 webui/app.py                     # then open http://127.0.0.1:8600
+
+# B) Auto-venv launchers (installs Flask+PyYAML on first run):
+./webui/start-soc-ui.sh                  # Linux / macOS
+webui\Start-SOC-UI.bat                   # Windows (double-click)
+
+# C) Standalone Windows app (no Python needed) — build once:
+python webui/build_exe.py                # -> release/FOSS-SOC-UI/FOSS-SOC-UI.exe
+```
+
+**Secure by default — the login (audit-hardened):** there is **no built-in
+`admin/admin`**. Credentials are resolved in priority order:
+
+1. **A TLSOCDocker ELK `.env`** (point at it with `SOC_ENV_FILE=/path/to/.env` or
+   `auth.env_file` in `config.yaml`) → log in with the **same `elastic` user and
+   password you use for Kibana**. While an `.env` is found, the local login is disabled
+   (no weaker back-door).
+2. **`SOC_UI_USER` / `SOC_UI_PASSWORD`** environment variables → your own credentials.
+3. **Otherwise, on first start** the console **generates a random password** for user
+   `admin` and prints it **once** in the terminal window. It is stored
+   salted-and-hashed in `.soc-ui-auth.json` next to the app — delete that file and
+   restart to rotate it.
+
+The engine start/stop/restart buttons in the Monitor are **off by default**; enable
+with `SOC_UI_ALLOW_CONTROL=1` (Linux+systemd). The login travels over plain HTTP, so
+run it on a trusted LAN or behind an HTTPS reverse proxy; it binds to `127.0.0.1` by
+default (set `SOC_UI_HOST=0.0.0.0` to expose it — see WEB_UI_GUIDE §11). For local
+development only, `SOC_UI_NO_AUTH=1` disables the login (it prints a loud warning).
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `SOC_UI_PORT` | `8600` | listen port |
+| `SOC_UI_HOST` | `127.0.0.1` | bind address (`0.0.0.0` = reachable on the LAN) |
+| `SOC_UI_NO_BROWSER` | — | set to `1` to not auto-open a browser |
+| `SOC_UI_ALLOW_CONTROL` | — | set to `1` to enable engine start/stop/restart buttons |
+| `SOC_LOG_DIR` | `<repo>/logs` | where the Monitor reads the engine's live stats (set if UI and engine are in different folders) |
+
+---
+
+## Use it inside Kibana (ELK plugin)
+
+If your team already lives in Kibana, the **entire console can run as a native Kibana
+plugin** — Test / Rules / Config / ECS / Monitor as a left-nav item, with **no
+separate login** (Kibana authenticates you). It is an *optional* front-end; the
+standalone Web UI above still works exactly the same.
+
+How it fits together: the plugin's server side is a thin proxy that forwards
+`/api/tlsoc_parser/*` to a headless copy of the same Flask backend running as a
+container (`tlsoc-parser-ui`), bind-mounted to the **real engine's** `rules/`,
+`config.yaml`, and `logs/`. So editing a rule in Kibana edits the production rule (the
+engine hot-reloads it) and the Monitor shows the live engine's real metrics — one API
+contract, never a second engine.
+
+**Quick start** (full steps in [elk-plugin/INSTALL.md](elk-plugin/INSTALL.md);
+requires a Kibana **8.19.12** build tree):
+
+```bash
+# 1. Build the backend image (from the repo root):
+docker build -f elk-plugin/backend/Dockerfile -t tlsoc-parser-ui:1.0.0 .
+
+# 2. Build the Kibana plugin against a Kibana 8.19.12 dev tree -> a folder/zip,
+#    then drop it in ./kibana/installed_plugins/tlsocParser
+
+# 3. Add the tlsoc-parser-ui service + kibana volume + TLSOCPARSER_BACKENDURL
+#    to your compose (see elk-plugin/deploy/docker-compose.snippet.yml), then:
+docker compose up -d --build tlsoc-parser-ui kibana
+```
+
+Then open **Kibana → left nav → TLSOC Parser**. Rebuild the backend image whenever the
+engine's Python changes; the plugin proxy is generic, so new engine endpoints need no
+plugin server change. Architecture and feature-parity table:
+**[elk-plugin/README.md](elk-plugin/README.md)**.
 
 ---
 

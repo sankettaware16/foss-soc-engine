@@ -35,7 +35,7 @@ FOSS-SOC-UI/
 ├─ config.yaml          ← your engine settings (editable in the UI too)
 ├─ rules/               ← your parser rules (.yaml) — editable in the UI too
 ├─ examples/            ← sample logs to try
-└─ database/            ← (optional) drop GeoLite2-City.mmdb here for geo data
+└─ database/            ← (optional) drop GeoLite2-City.mmdb + GeoLite2-ASN.mmdb here for geo/ASN data
 ```
 
 ### B) The launcher script (you already have Python 3)
