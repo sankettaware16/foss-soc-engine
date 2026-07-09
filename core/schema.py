@@ -1,19 +1,24 @@
-import json
+from utils import fastjson
+
 
 class LogInput:
     def __init__(self, kafka_value):
         try:
-            # Handle bytes or string input
-            if isinstance(kafka_value, bytes):
-                kafka_value = kafka_value.decode('utf-8')
-            
-            data = json.loads(kafka_value)
+            # fastjson.loads handles both bytes (straight off Kafka) and str.
+            data = fastjson.loads(kafka_value)
             self.meta = data.get("meta", {})
-            self.raw = data.get("raw", "").strip()
+            raw = data.get("raw", "")
+            self.raw = raw.strip() if isinstance(raw, str) else str(raw).strip()
             self.program = self.meta.get("source_program", "unknown")
             self.valid = True
         except Exception:
             self.valid = False
-            self.raw = str(kafka_value)
+            try:
+                if isinstance(kafka_value, (bytes, bytearray)):
+                    self.raw = kafka_value.decode("utf-8", "ignore")
+                else:
+                    self.raw = str(kafka_value)
+            except Exception:
+                self.raw = ""
             self.program = "unknown"
             self.meta = {}
