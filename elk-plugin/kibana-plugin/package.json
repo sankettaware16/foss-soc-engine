@@ -1,0 +1,12 @@
+{
+  "name": "tlsocParser",
+  "version": "1.0.0",
+  "private": true,
+  "license": "Elastic-2.0",
+  "scripts": {
+    "build": "yarn plugin-helpers build --kibana-version 8.19.12",
+    "dev": "yarn plugin-helpers dev",
+    "plugin-helpers": "node ../../scripts/plugin_helpers",
+    "kbn": "node ../../scripts/kbn"
+  }
+}
