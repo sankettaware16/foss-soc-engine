@@ -24,6 +24,8 @@ _BUFFER = 1024 * 1024
 
 
 class OutputWriter:
+    _SAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]")
+
     def __init__(self, output_dir, suffix="", rotate_mb=0, fsync=False):
         self.output_dir = output_dir
         self.suffix = suffix
@@ -33,6 +35,17 @@ class OutputWriter:
         self.sizes = {}     # module -> current file size in bytes
         self.last_error = None
         os.makedirs(output_dir, exist_ok=True)
+
+    def _fname(self, module):
+        # event.module is normally the source program set by the engine, but a
+        # rule can override it — it must never be able to escape output_dir
+        # (path separators) or kill the writer (a non-string dict key crashed
+        # the whole worker before the engine made event.module replace-only).
+        if isinstance(module, list):
+            module = module[0] if module else "unknown"
+        name = self._SAFE_NAME.sub("_", str(module or "unknown"))
+        name = name.lstrip(".")[:80]
+        return name or "unknown"
 
     def _path(self, module):
         return os.path.join(self.output_dir, f"{module}{self.suffix}.json")
@@ -55,7 +68,7 @@ class OutputWriter:
         grouped = {}
         for event in batch:
             ev = event.get("event") or {}
-            module = ev.get("module", "unknown")
+            module = self._fname(ev.get("module", "unknown"))
             grouped.setdefault(module, []).append(fastjson.dumps_bytes(event))
 
         for module, blobs in grouped.items():

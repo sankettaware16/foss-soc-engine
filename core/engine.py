@@ -672,17 +672,29 @@ class UniversalEngine:
             for k, v in static.items():
                 self._set_nested(event, k, v)
 
+    # Engine-owned bookkeeping fields, pre-set by _init_event. A rule writing
+    # to one of these must REPLACE the provisional value, never list-promote
+    # it: a list-typed @timestamp/event.ingested breaks the Elasticsearch
+    # date field, and event.module names the per-source output FILE — a
+    # non-string there used to crash the whole worker (found live 2026-07-16:
+    # a rule static event.module colliding with the source name produced
+    # ["roundcube_login", "roundcube"] and the writer died on the dict key).
+    _REPLACE_PATHS = frozenset((
+        '@timestamp',
+        'ecs.version',
+        'event.module',
+        'event.ingested',
+        'event.timestamp_source',
+    ))
+
     def _set_nested(self, d, path, value):
-        # @timestamp is pre-set by _init_event; a rule writing to it must
-        # REPLACE the provisional value, never list-promote it (a list-typed
-        # @timestamp breaks the Elasticsearch date field).
-        if path == '@timestamp':
-            d['@timestamp'] = value
-            return
         keys = path.split('.')
         for key in keys[:-1]:
             d = d.setdefault(key, {})
         last = keys[-1]
+        if path in self._REPLACE_PATHS:
+            d[last] = value
+            return
         if last in d:
             if isinstance(d[last], list):
                 if isinstance(value, list):

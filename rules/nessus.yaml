@@ -52,11 +52,15 @@ mapping:
   hosts.*.info: "nessus.severity_counts.info"
   hosts.*.score: "host.risk_score"
 
+# NOTE: no event.module static here. event.module is engine-owned — it is set
+# to the SOURCE PROGRAM name and becomes the output filename. Overriding it in
+# a rule redirects every matching source into one shared file; the old
+# "nessus_raw" value was a legacy leftover that collided with real source
+# names (see journal 2026-07-16).
 static:
   event.kind: "alert"
   event.category: "vulnerability"
   event.type: "info"
-  event.module: "nessus_raw"
   service.type: "nessus"
   observer.type: "scanner"
   observer.vendor: "tenable"

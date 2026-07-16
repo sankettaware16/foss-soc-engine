@@ -20,7 +20,6 @@ patterns:
     static:
       event.action: "login"
       event.outcome: "failure"
-      event.module: "roundcube"
 
   # 2. Successful Login
   # Log: <session> Successful login for user... (ID: 41) from Proxy (X-Real-IP: Real)
@@ -34,4 +33,3 @@ patterns:
     static:
       event.action: "login"
       event.outcome: "success"
-      event.module: "roundcube"
