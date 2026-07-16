@@ -18,3 +18,8 @@ Jun 16 10:04:00 mail sshd[2001]: Server listening on 0.0.0.0 port 22.
 Jun 16 10:04:00 mail sshd[2001]: Server listening on :: port 22.
 Jun 16 10:04:05 mail (systemd): pam_unix(systemd-user:session): session opened for user alice(uid=1003) by alice(uid=0)
 Jun 16 10:04:30 mail (systemd): pam_unix(systemd-user:session): session closed for user alice
+Jun 16 10:05:00 h su[2681020]: pam_unix(su:session): session opened for user root(uid=0) by alice(uid=0)
+Jun 16 10:05:20 h su[2681020]: pam_unix(su:session): session closed for user root
+Jun 16 10:05:40 mail sshd[293471]: Disconnecting authenticating user admin 198.51.100.7 port 38132: Too many authentication failures [preauth]
+Jun 16 10:05:41 mail sshd[293471]: PAM service(sshd) ignoring max retries; 6 > 3
+Jun 16 10:05:50 h systemd-logind[721]: Session 6009 logged out. Waiting for processes to exit.

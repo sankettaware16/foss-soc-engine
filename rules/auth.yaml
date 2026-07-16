@@ -73,6 +73,33 @@ patterns:
       event.outcome: "failure"
       event.reason: "max_auth_attempts"
 
+  - name: "ssh_disconnect_auth_user"
+    # OpenSSH's other brute-force disconnect shape: "Disconnecting
+    # authenticating user admin 203.0.113.7 port 38132: Too many
+    # authentication failures [preauth]"
+    prematch: "Disconnecting authenticating user"
+    regex: 'sshd\[\d+\]: Disconnecting authenticating user (?P<user>[\w-]+(?:\.[\w-]+)*) (?P<ip>[\d\.]+) port (?P<port>\d+): (?P<reason>.+?)\s*(?:\[preauth\])?\s*$'
+    mapping:
+      user: "user.name"
+      ip: "source.ip"
+      port: "source.port|int"
+      reason: "event.reason"
+    static:
+      event.action: "login"
+      event.outcome: "failure"
+
+  - name: "ssh_pam_ignoring_max_retries"
+    # Companion line of the disconnect above (no user/ip of its own); parsed
+    # so brute-force bursts don't flood the DLQ.
+    prematch: "ignoring max retries"
+    regex: 'PAM service\(sshd\) ignoring max retries; (?P<count>\d+) > \d+'
+    mapping:
+      count: "event.repeat_count|int"
+    static:
+      event.action: "login"
+      event.outcome: "failure"
+      event.reason: "pam_max_retries"
+
   - name: "ssh_pam_auth_failure"
     prematch: "pam_unix(sshd:auth)"
     regex: 'sshd\[\d+\]: pam_unix\(sshd:auth\): authentication failure;.*rhost=(?P<ip>[\d\.]+).*user=(?P<user>[\w-]+(?:\.[\w-]+)*)'
@@ -262,14 +289,25 @@ patterns:
       event.action: "su_attempt"
 
   - name: "su_session_opened"
-    prematch: "pam_unix(su-l:session)"
-    regex: 'su\[\d+\]: pam_unix\(su-l:session\): session opened for user (?P<target>\w+)\(uid=\d+\) by (?P<user>[\w-]+(?:\.[\w-]+)*)\(uid=\d+\)'
+    # both variants: "su -" logs su-l:session, plain "su" logs su:session
+    prematch: ["pam_unix(su-l:session)", "pam_unix(su:session)"]
+    regex: 'su\[\d+\]: pam_unix\(su(?:-l)?:session\): session opened for user (?P<target>\w+)\(uid=\d+\) by (?P<user>[\w-]+(?:\.[\w-]+)*)\(uid=\d+\)'
     mapping:
       user: "user.name"
       target: "user.target.name"
     static:
       event.action: "su"
       event.outcome: "success"
+
+  - name: "su_session_closed"
+    prematch: ["pam_unix(su-l:session)", "pam_unix(su:session)"]
+    regex: 'su\[\d+\]: pam_unix\(su(?:-l)?:session\): session closed for user (?P<target>\w+)'
+    mapping:
+      target: "user.target.name"
+    static:
+      event.action: "su"
+      event.category: "session"
+      event.type: "end"
 
 # =========================================================
 # 4. SYSTEM SESSIONS (logind, cron)
@@ -293,6 +331,18 @@ patterns:
     static:
       event.category: "session"
       event.type: "end"
+
+  - name: "system_session_logout"
+    # precedes "Removed session" on every logout; distinct event.action so
+    # the two end-of-session lines stay distinguishable
+    prematch: "logged out"
+    regex: 'systemd-logind\[\d+\]: Session (?P<session_id>\d+) logged out'
+    mapping:
+      session_id: "session.id"
+    static:
+      event.category: "session"
+      event.type: "end"
+      event.action: "logout"
 
   - name: "cron_session"
     prematch: "pam_unix(cron:session): session opened"
