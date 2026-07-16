@@ -10,14 +10,20 @@ timestamp:
   group: timestamp
   format: clf
 
-# Anchored: a CLF request line always STARTS with the client IP. The ^ also
-# kills the O(n^2) scan a leading unanchored quantifier costs on garbage lines.
-regex: '^(?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]+))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
+# Anchored (kills the O(n^2) scan on garbage lines), with an OPTIONAL leading
+# "vhost:port " prefix so BOTH standard Apache formats parse:
+#   combined:        203.0.113.7 - - [...] "GET / HTTP/1.1" ...
+#   vhost_combined:  www.example.com:443 203.0.113.7 - - [...] "GET / HTTP/2.0" ...
+regex: '^(?:(?P<vhost>[^\s:]+):(?P<vport>\d+) )?(?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]+))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
 
 mapping:
 
   # Source
   ip: "source.ip"
+
+  # Virtual host (only present in the vhost_combined format)
+  vhost: "url.domain"
+  vport: "url.port|int"
 
   # HTTP
   method: "http.request.method"
