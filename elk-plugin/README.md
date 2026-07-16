@@ -92,8 +92,11 @@ See **[INSTALL.md](INSTALL.md)** for the full walkthrough. In short:
    > Rebuild this image whenever the engine's Python code changes (e.g. `core/`,
    > `webui/`) — the image bakes the code in; only `rules/` + `config.yaml` +
    > `logs/` come from the bind-mount at runtime.
-2. **Build the Kibana plugin** against a Kibana 8.19.12 dev tree (produces a
-   folder/zip) and drop it in `./kibana/installed_plugins/tlsocParser`.
+2. **Build the Kibana plugin** against a Kibana **v8.19.12** dev tree with
+   **Node 22.22.0** (produces a folder/zip) and drop it in
+   `./kibana/installed_plugins/tlsocParser`. INSTALL.md has the exact,
+   production-verified commands — including the zip-verify step that catches
+   a silently missing browser bundle.
 3. **Wire it into your compose** (`deploy/docker-compose.snippet.yml`): add the
    `tlsoc-parser-ui` service and the `kibana` volume + `TLSOCPARSER_BACKENDURL`.
 4. `docker compose up -d --build tlsoc-parser-ui kibana`

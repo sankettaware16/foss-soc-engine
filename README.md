@@ -141,6 +141,12 @@ whichever fits your team. You are never locked into one.
 ---
 
 ## Installation
+
+> **Already running an old version?** Don't install over it — follow
+> **[UPGRADING.md](UPGRADING.md)**: a battle-tested, zero-data-loss migration
+> (backup → side-by-side shadow test against live traffic → one-minute
+> cutover with instant rollback).
+
 ### GeoIP + ASN Database Requirement
 
 This project uses two MaxMind GeoLite2 databases for IP enrichment. Both are
