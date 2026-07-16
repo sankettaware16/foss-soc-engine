@@ -105,6 +105,13 @@ program_mapping:
 #  postfix: "postfix"
 #  roundcube: "roundcube"
 
+# auth:
+#   # Web UI login. Uncomment to sign in with the SAME elastic user/password
+#   # as your ELK stack (the UI reads ELASTIC_PASSWORD from this file):
+#   env_file: "/opt/TLSOCDockerDeploy/.env"
+#   # Without this block (and no SOC_UI_USER/SOC_UI_PASSWORD env vars), the
+#   # UI generates a password on first start - see "Signing in" in the README.
+
 redis:
   # Only used by 'stateful' rules (multi-line transaction correlation, e.g.
   # postfix). Ignore this section if you run no stateful rules.

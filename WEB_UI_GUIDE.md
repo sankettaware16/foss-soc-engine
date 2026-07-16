@@ -59,24 +59,49 @@ Then open **http://127.0.0.1:8600** if it doesn't open on its own.
 
 ### Signing in
 
-The console is password-protected. When it starts, the console window prints the
-login it is using:
+The console is password-protected, and the startup log **always tells you which
+login it is using** — when in doubt, look there first:
 
-- **On a server running the TLSOCDocker ELK stack** — point it at the stack's
-  `.env` (set `SOC_ENV_FILE=/path/to/your/elk/.env`, or `auth.env_file` in
-  `config.yaml`) and it uses the **same `elastic` username and password you use
-  for Kibana**. (While a `.env` is found the generated local login is
-  disabled, so there is no weaker back-door.)
-- **Anywhere else (e.g. the Windows build)** — on **first start** the console
-  window prints a **generated password** for user `admin` (there is no
-  built-in default login anymore). The password is stored salted-and-hashed
-  in `.soc-ui-auth.json` next to the app — **delete that file and restart to
-  get a new one**, or set `SOC_UI_USER` and `SOC_UI_PASSWORD` before
-  launching to choose your own.
+```bash
+journalctl -u foss-soc-ui -n 40 --no-pager | grep '\[auth\]'   # server (systemd)
+# or just read the black console window on Windows
+```
+
+**Case A — you run the TLSOCDocker ELK stack (recommended for servers).**
+Use the **same `elastic` username and password as Kibana**. Tell the console
+where your stack's `.env` lives by adding this to `config.yaml` — careful, the
+second line is indented under `auth:`:
+
+```yaml
+auth:
+  env_file: "/opt/TLSOCDockerDeploy/.env"
+```
+
+Then `sudo systemctl restart foss-soc-ui` and check the log line says
+`[auth] credentials from elk-env:...`. Sign in as `elastic`. While the `.env` is
+in use the generated local login is disabled (no weaker back-door), and if the
+path is wrong the log prints an `[auth] WARNING` explaining why it fell back.
+(You can use the `SOC_ENV_FILE` environment variable instead of the config block —
+same effect.)
+
+**Case B — anywhere else (e.g. the Windows app).** On **first start** the console
+window prints a **generated password** for user `admin` (there is no built-in
+default login). It is stored salted-and-hashed in `.soc-ui-auth.json` next to the
+app. Lost it?
+
+- On a server: `journalctl -u foss-soc-ui --no-pager | grep 'password:'`
+- Anywhere: **delete `.soc-ui-auth.json` and restart** — a new password is
+  generated and printed.
+- Prefer choosing your own? Set `SOC_UI_USER` and `SOC_UI_PASSWORD` before
+  launching.
 
 Where it looks for the ELK `.env` (first match wins): the `SOC_ENV_FILE`
 environment variable → `auth.env_file` in `config.yaml` → a
 `TLSOCDockerDeploy/.env` next to the app → a `.env` in the app folder.
+
+> **Server tip:** the systemd unit must contain `Environment=PYTHONUNBUFFERED=1`
+> (the shipped `webui/foss-soc-ui.service` has it) — without it the `[auth]` line
+> and the first-run password can be held back from `journalctl` by buffering.
 
 Sign out any time with the button in the top-right. For local development only,
 you can disable the login entirely with `SOC_UI_NO_AUTH=1`.

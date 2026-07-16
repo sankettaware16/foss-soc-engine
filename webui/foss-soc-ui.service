@@ -28,6 +28,24 @@ Environment=SOC_UI_HOST=0.0.0.0
 Environment=SOC_UI_PORT=8600
 Environment=SOC_UI_NO_BROWSER=1
 
+# REQUIRED under systemd: without this, Python buffers stdout and the startup
+# banner (incl. the [auth] line and the first-run generated password) may not
+# appear in `journalctl -u foss-soc-ui` until much later.
+Environment=PYTHONUNBUFFERED=1
+
+# --- LOGIN (pick ONE, see "Signing in" in the README) ---
+# a) Use your ELK stack's elastic user/password (recommended on ELK servers):
+#Environment=SOC_ENV_FILE=/opt/TLSOCDockerDeploy/.env
+#    (or set  auth.env_file  in config.yaml instead - same effect)
+# b) Your own fixed credentials:
+#Environment=SOC_UI_USER=youruser
+#Environment=SOC_UI_PASSWORD=yourpassword
+# c) Neither set -> a password is GENERATED on first start; read it with:
+#    journalctl -u foss-soc-ui | grep password:
+
+# Optional: enable the Start/Stop/Restart engine buttons in the Monitor tab.
+#Environment=SOC_UI_ALLOW_CONTROL=1
+
 # Use the private UI virtual-env created by start-soc-ui.sh (recommended), or
 # change this to a plain "python3" if you installed Flask/PyYAML system-wide.
 ExecStart=/opt/foss-soc-engine/.venv-ui/bin/python /opt/foss-soc-engine/webui/app.py

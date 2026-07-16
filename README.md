@@ -410,18 +410,56 @@ webui\Start-SOC-UI.bat                   # Windows (double-click)
 python webui/build_exe.py                # -> release/FOSS-SOC-UI/FOSS-SOC-UI.exe
 ```
 
-**Secure by default — the login (audit-hardened):** there is **no built-in
-`admin/admin`**. Credentials are resolved in priority order:
+### Signing in (password handling)
 
-1. **A TLSOCDocker ELK `.env`** (point at it with `SOC_ENV_FILE=/path/to/.env` or
-   `auth.env_file` in `config.yaml`) → log in with the **same `elastic` user and
-   password you use for Kibana**. While an `.env` is found, the local login is disabled
-   (no weaker back-door).
-2. **`SOC_UI_USER` / `SOC_UI_PASSWORD`** environment variables → your own credentials.
-3. **Otherwise, on first start** the console **generates a random password** for user
-   `admin` and prints it **once** in the terminal window. It is stored
-   salted-and-hashed in `.soc-ui-auth.json` next to the app — delete that file and
-   restart to rotate it.
+There is **no built-in `admin/admin`** — the console is secure by default.
+Credentials are resolved in this priority order (first match wins):
+
+| Priority | Source | You log in as | Set it with |
+|---|---|---|---|
+| 1 | **Your ELK stack's `.env`** | `elastic` + your `ELASTIC_PASSWORD` (same as Kibana) | `auth.env_file` in config.yaml **or** the `SOC_ENV_FILE` env var |
+| 2 | **Fixed credentials** | whatever you choose | `SOC_UI_USER` + `SOC_UI_PASSWORD` env vars |
+| 3 | **Generated (default)** | `admin` + a random password created on first start | nothing — automatic |
+
+**Option 1 — use your ELK login (recommended on an ELK server).** Add this to
+`config.yaml` (note: `env_file` must be indented **under** `auth:`; a top-level
+`env_file:` is accepted as a fallback, but the nested form is the documented one):
+
+```yaml
+auth:
+  env_file: "/opt/TLSOCDockerDeploy/.env"   # any .env containing ELASTIC_PASSWORD
+```
+
+Restart the UI and confirm which credential source it picked — the startup log
+always says:
+
+```bash
+sudo systemctl restart foss-soc-ui
+journalctl -u foss-soc-ui -n 40 --no-pager | grep '\[auth\]'
+#  -> [auth] credentials from elk-env:/opt/TLSOCDockerDeploy/.env (user 'elastic')
+```
+
+Then sign in as **`elastic`** with your `ELASTIC_PASSWORD`. While an ELK `.env` is
+in use, the generated local login is **disabled** (no weaker back-door). If the
+configured path is missing or contains no `ELASTIC_PASSWORD`, the UI prints a loud
+`[auth] WARNING` at startup telling you exactly why it fell back. After rotating
+the elastic password, just restart the UI — the `.env` is re-read on every start.
+
+**Option 3 — the generated password (out-of-the-box default).** On first start the
+console prints a banner with a random password for user `admin`, stored
+salted-and-hashed in `.soc-ui-auth.json` next to the app. To read it again later:
+
+```bash
+journalctl -u foss-soc-ui --no-pager | grep 'password:'   # under systemd
+```
+
+Forgot it or want a new one? Delete `.soc-ui-auth.json` and restart — a fresh
+password is generated and printed.
+
+> **Running under systemd?** Keep `Environment=PYTHONUNBUFFERED=1` in the unit
+> (the shipped [`webui/foss-soc-ui.service`](webui/foss-soc-ui.service) has it) —
+> without it, Python buffers stdout and the `[auth]` line / first-run password may
+> not show up in `journalctl` right away.
 
 The engine start/stop/restart buttons in the Monitor are **off by default**; enable
 with `SOC_UI_ALLOW_CONTROL=1` (Linux+systemd). The login travels over plain HTTP, so

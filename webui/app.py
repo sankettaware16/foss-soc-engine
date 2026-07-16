@@ -143,22 +143,33 @@ def _parse_env_file(path):
 
 
 def _find_elk_env():
-    """Return (path, parsed) for the first TLSOCDocker .env that has an
-    ELASTIC_PASSWORD, or (None, None)."""
-    candidates = []
+    """Return (path, parsed) for the first .env that has an ELASTIC_PASSWORD,
+    or (None, None).
+
+    A path the operator configured EXPLICITLY (SOC_ENV_FILE or config.yaml)
+    that turns out to be missing/unusable is reported loudly at startup —
+    a typo here must never fail silently into the generated-password login."""
+    explicit = []   # (where-it-was-configured, path)
     if os.environ.get("SOC_ENV_FILE"):
-        candidates.append(os.environ["SOC_ENV_FILE"])
+        explicit.append(("SOC_ENV_FILE", os.environ["SOC_ENV_FILE"]))
     # optional config.yaml auth.env_file (read directly - load_config() is
     # defined further down and this runs at import time).
-    auth_cfg = {}
+    cfg = {}
     try:
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                auth_cfg = (yaml.safe_load(f) or {}).get("auth") or {}
+                cfg = yaml.safe_load(f) or {}
     except Exception:
-        auth_cfg = {}
+        cfg = {}
+    auth_cfg = cfg.get("auth") or {}
     if auth_cfg.get("env_file"):
-        candidates.append(auth_cfg["env_file"])
+        explicit.append(("config.yaml auth.env_file", auth_cfg["env_file"]))
+    # Forgiveness: a top-level `env_file:` (the natural indentation slip when
+    # adding the auth block by hand) is accepted too.
+    if cfg.get("env_file"):
+        explicit.append(("config.yaml env_file", cfg["env_file"]))
+
+    candidates = [p for _, p in explicit]
     candidates += DEFAULT_ENV_PATHS
     candidates.append(os.path.join(os.path.dirname(DATA_ROOT), "TLSOCDockerDeploy", ".env"))
     candidates.append(os.path.join(DATA_ROOT, ".env"))
@@ -167,6 +178,11 @@ def _find_elk_env():
             env = _parse_env_file(p)
             if env and env.get("ELASTIC_PASSWORD"):
                 return p, env
+    for where, p in explicit:
+        why = ("file not found" if not os.path.isfile(str(p))
+               else "no ELASTIC_PASSWORD in it")
+        print(f"[auth] WARNING: {where} points at {p} but it is unusable "
+              f"({why}) - falling back to the next credential source")
     return None, None
 
 
@@ -292,8 +308,11 @@ def login_page():
         hint = "Sign in with the SOC_UI_USER / SOC_UI_PASSWORD you configured."
     else:
         hint = ("Sign in as <b>admin</b> with the password printed in the "
-                "console window on first start. Forgot it? Delete "
-                "<code>.soc-ui-auth.json</code> next to the app and restart.")
+                "console window on first start (under systemd: "
+                "<code>journalctl -u foss-soc-ui | grep password:</code>). "
+                "Forgot it? Delete <code>.soc-ui-auth.json</code> next to the "
+                "app and restart. Prefer your ELK/Elastic login? Set "
+                "<code>auth.env_file</code> in config.yaml — see the README.")
     return render_template("login.html", hint=hint)
 
 
