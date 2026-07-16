@@ -135,6 +135,17 @@ patterns:
       event.category: "session"
       event.type: "end"
 
+  - name: "sshd_listening"
+    # sshd (re)start — one line per bound address ("0.0.0.0" and "::").
+    # A service restart is worth seeing on an auth timeline.
+    prematch: "Server listening on"
+    regex: 'sshd\[\d+\]: Server listening on (?P<ip>[\d.:a-fA-F]+) port (?P<port>\d+)'
+    mapping:
+      ip: "server.ip"
+      port: "server.port|int"
+    static:
+      event.action: "service_start"
+
 # =========================================================
 # 2. SUDO (PRIVILEGE ESCALATION - HIGH PRIORITY)
 # =========================================================
@@ -298,6 +309,27 @@ patterns:
       user: "user.name"
     static:
       event.category: "cron"
+      event.type: "end"
+
+  # systemd user-manager sessions ("(systemd): pam_unix(systemd-user:session)")
+  # — fires on every login's user-instance startup; without these the lines
+  # dead-letter as no_match on any modern systemd distro.
+  - name: "systemd_user_session_opened"
+    prematch: "pam_unix(systemd-user:session): session opened"
+    regex: 'pam_unix\(systemd-user:session\): session opened for user (?P<user>[\w-]+(?:\.[\w-]+)*)\(uid=\d+\)'
+    mapping:
+      user: "user.name"
+    static:
+      event.category: "session"
+      event.type: "start"
+
+  - name: "systemd_user_session_closed"
+    prematch: "pam_unix(systemd-user:session): session closed"
+    regex: 'pam_unix\(systemd-user:session\): session closed for user (?P<user>[\w-]+(?:\.[\w-]+)*)'
+    mapping:
+      user: "user.name"
+    static:
+      event.category: "session"
       event.type: "end"
 
 # =========================================================

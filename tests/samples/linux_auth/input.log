@@ -14,3 +14,7 @@ Jun 16 10:00:12 h polkitd[55]: Registered Authentication Agent for unix-session:
 Jun 16 10:00:13 h kernel: eth0 link up 1000Mbps full duplex - must not match
 Jun 16 10:03:05 mail sshd[1130]: Accepted publickey for deploy from 192.0.2.55 port 33002 ssh2
 Jun 16 10:03:40 mail sshd[1131]: Failed password for www-data from 198.51.100.77 port 40230 ssh2
+Jun 16 10:04:00 mail sshd[2001]: Server listening on 0.0.0.0 port 22.
+Jun 16 10:04:00 mail sshd[2001]: Server listening on :: port 22.
+Jun 16 10:04:05 mail (systemd): pam_unix(systemd-user:session): session opened for user alice(uid=1003) by alice(uid=0)
+Jun 16 10:04:30 mail (systemd): pam_unix(systemd-user:session): session closed for user alice
