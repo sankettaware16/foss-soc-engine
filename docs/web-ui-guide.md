@@ -1,4 +1,4 @@
-# FOSS SOC Engine — Web UI Guide
+# TLSOC Engine — Web UI Guide
 
 A point‑and‑click console for the log‑parsing engine. Everything you used to do
 by running separate Python files — testing a log file, adding and testing a
@@ -67,14 +67,14 @@ journalctl -u foss-soc-ui -n 40 --no-pager | grep '\[auth\]'   # server (systemd
 # or just read the black console window on Windows
 ```
 
-**Case A — you run the TLSOCDocker ELK stack (recommended for servers).**
+**Case A — you run the TLSOC Docker Deploy stack (recommended for servers).**
 Use the **same `elastic` username and password as Kibana**. Tell the console
 where your stack's `.env` lives by adding this to `config.yaml` — careful, the
 second line is indented under `auth:`:
 
 ```yaml
 auth:
-  env_file: "/opt/TLSOCDockerDeploy/.env"
+  env_file: "/opt/tlsoc-docker-deploy/.env"   # /opt/TLSOCDockerDeploy/.env on legacy installs
 ```
 
 Then `sudo systemctl restart foss-soc-ui` and check the log line says
@@ -165,7 +165,7 @@ consumer **group**, and the process **PID(s)**. Below that, live panels:
 > **Where the numbers come from.** The running engine writes tiny stats files
 > (every 2 s by default) plus a heartbeat into its `logs/` folder, and the
 > Monitor reads those. So the UI and the engine must share the same project
-> folder (they do when both run from e.g. `/opt/foss-soc-engine`). If they live
+> folder (they do when both run from e.g. `/opt/tlsoc-engine`). If they live
 > in different places, point the UI at the engine's logs with the `SOC_LOG_DIR`
 > environment variable. Tune how often stats are written with
 > `runtime.metrics_interval_sec` in `config.yaml`.
@@ -216,7 +216,7 @@ You'll get:
 > from: `log` is good; `log_assumed_utc` means the log had no timezone (add
 > `tz: "+05:30"`-style to the rule's `timestamp:` block if you know it);
 > `ingest_fallback` means the time couldn't be read — add or fix the rule's
-> `timestamp:` block (see WRITING_RULES.md §5).
+> `timestamp:` block (see [writing-rules.md](writing-rules.md) §5).
 
 ---
 
@@ -342,8 +342,8 @@ The Windows `.exe` does **not** run on Linux. On Ubuntu you run it from Python
 (no compiler needed — only Flask + PyYAML, which install as wheels):
 
 ```bash
-# copy the project to the server, e.g. /opt/foss-soc-engine, then:
-cd /opt/foss-soc-engine
+# copy the project to the server, e.g. /opt/tlsoc-engine, then:
+cd /opt/tlsoc-engine
 ./webui/start-soc-ui.sh        # first run makes a venv + installs Flask/PyYAML
 ```
 
@@ -358,7 +358,7 @@ hostname -I        # e.g. 192.168.10.25
 ### Step 3 — start it bound to the network
 
 ```bash
-cd /opt/foss-soc-engine
+cd /opt/tlsoc-engine
 SOC_UI_HOST=0.0.0.0 SOC_UI_PORT=8600 SOC_UI_NO_BROWSER=1 ./webui/start-soc-ui.sh
 ```
 

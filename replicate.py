@@ -311,7 +311,7 @@ def main():
                 print(f"        {D}program_mapping:\n          {tag}: \"{best}\"{X}")
             else:
                 print(f"   {B}-> suggestion:{X} no existing rule matches these lines - write a new rule "
-                      f"(see WRITING_RULES.md or ecs_helper)")
+                      f"(see docs/writing-rules.md or ecs_helper)")
 
         (healthy if source_ok else issues).append(tag)
         print()

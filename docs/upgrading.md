@@ -41,7 +41,7 @@ sudo cp /etc/systemd/system/foss-soc.service /opt/backups/foss-soc.service.old-$
 
 ```bash
 sudo mkdir -p /opt/foss-soc-engine && sudo chown $USER: /opt/foss-soc-engine
-git clone https://github.com/sankettaware16/foss-soc-engine.git /opt/foss-soc-engine
+git clone https://github.com/sankettaware16/tlsoc-engine.git /opt/foss-soc-engine
 cd /opt/foss-soc-engine
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt

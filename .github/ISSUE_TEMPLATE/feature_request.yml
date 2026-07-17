@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose an engine capability, tool improvement, or new bundled rule
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What can't you do today, or what is harder than it should be?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        What should happen? For a new log source, include a few **sanitized** sample
+        lines and which strategy you think fits (see docs/writing-rules.md).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including "why an existing rule/strategy/config knob doesn't cover this".
+    validations:
+      required: false

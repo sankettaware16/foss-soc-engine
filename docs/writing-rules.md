@@ -1,6 +1,6 @@
 # Writing Parsers (Rules) — the ECS-friendly guide
 
-A **rule** is a small YAML file in [`rules/`](rules/) that teaches the engine how
+A **rule** is a small YAML file in [`rules/`](../rules/) that teaches the engine how
 to turn one kind of raw log into clean, structured JSON. You do **not** edit any
 Python to add a parser — you just add a YAML file.
 
@@ -401,7 +401,7 @@ to confirm it's clean before deploying.
 ### 📋 Master prompt (copy everything in the box)
 
 ````text
-You are an expert log-parsing engineer for the "FOSS SOC Engine". Your job: read
+You are an expert log-parsing engineer for the "TLSOC Engine". Your job: read
 the RAW LOG SAMPLES I paste at the end and output ONE ready-to-use YAML parser
 rule for this engine. Output ONLY the YAML inside a single code block — no
 explanation before or after.

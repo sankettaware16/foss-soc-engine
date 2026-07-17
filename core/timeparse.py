@@ -1,7 +1,7 @@
 """
 Deterministic event-timestamp parsing for the SOC engine.
 
-Rules declare a `timestamp:` block (see WRITING_RULES.md) naming where the
+Rules declare a `timestamp:` block (see docs/writing-rules.md) naming where the
 event time lives and which format it is in. This module turns that raw value
 into the exact same UTC ISO-8601 string shape that core.engine._now_iso()
 emits (aware-UTC datetime .isoformat()), so `@timestamp` stays byte-compatible

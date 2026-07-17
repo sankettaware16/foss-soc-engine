@@ -47,7 +47,7 @@ yarn kbn bootstrap
 # 3. Put THIS plugin under Kibana's plugins/ dir (git-ignored by Kibana).
 #    Copy elk-plugin/kibana-plugin/ from the engine repo to plugins/tlsocParser
 mkdir -p plugins
-cp -r /path/to/foss-soc-engine/elk-plugin/kibana-plugin plugins/tlsocParser
+cp -r /path/to/tlsoc-engine/elk-plugin/kibana-plugin plugins/tlsocParser
 
 # 4. Build the distributable. Do NOT pass --kibana-version: the plugin's
 #    package.json build script already pins it (passing it again errors with

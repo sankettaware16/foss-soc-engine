@@ -12,7 +12,7 @@ What you get (under  release/FOSS-SOC-UI/ ):
     rules/               <- editable parser rules
     examples/            <- sample logs
     database/            <- drop GeoLite2-City.mmdb here (optional)
-    WEB_UI_GUIDE.md      <- how to use it
+    WEB_UI_GUIDE.md      <- how to use it (copied from docs/web-ui-guide.md)
 
 Zip that folder and hand it to a tester: "unzip, double-click the .exe".
 The .exe is OS-specific - build it on the OS you want to ship to (run this on
@@ -86,10 +86,12 @@ def assemble():
                 "  GeoLite2-ASN.mmdb   -> source.as.*  (which ISP/cloud owns the IP)\n"
                 "The UI works fine without them.\n")
 
-    for doc in ("WEB_UI_GUIDE.md", "README.md", "LICENSE"):
-        p = os.path.join(ROOT, doc)
+    for src_rel, dst_name in (("docs/web-ui-guide.md", "WEB_UI_GUIDE.md"),
+                              ("README.md", "README.md"),
+                              ("LICENSE", "LICENSE")):
+        p = os.path.join(ROOT, src_rel)
         if os.path.exists(p):
-            shutil.copy2(p, os.path.join(RELEASE, doc))
+            shutil.copy2(p, os.path.join(RELEASE, dst_name))
 
     print("\n  Done.")
     print(f"  Release folder: {RELEASE}")

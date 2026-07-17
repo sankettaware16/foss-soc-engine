@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a defect in the engine, Web UI, Kibana plugin, or a bundled rule
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Sanitize everything you paste** — replace real IPs,
+        hostnames, usernames, and organization names with placeholders
+        (`203.0.113.10`, `example_org`). Never attach real log data.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Engine (parsing / output / Kafka consumption)
+        - A bundled rule (rules/*.yaml)
+        - Validation tools (preflight / replicate / test_*)
+        - Web UI
+        - Kibana plugin
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Steps, plus a **sanitized** sample log line and the rule/strategy involved, if relevant.
+      placeholder: |
+        1. Rule: rules/nginx.yaml (stateless)
+        2. Sample line (sanitized): 203.0.113.10 - - [17/Jul/2026:10:00:00 +0000] "GET / HTTP/1.1" 200 612 "-" "curl/8.0"
+        3. python3 test_file.py sample.txt nginx_access → line lands in no_match
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, engine commit/version, worker count, Kafka/Redis versions if relevant.
+      placeholder: Ubuntu 22.04, Python 3.10, commit abc1234, workers auto (8)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Sanitized excerpts from engine.log, the DLQ entry, or the test tool output.
+      render: text
+    validations:
+      required: false
