@@ -6,13 +6,27 @@ __pycache__/
 
 # Virtual environments
 venv/
+.venv-ui/
 .env
+
+# Web UI build artifacts (PyInstaller)
+build_out/
+release/
+*.spec.bak
 
 # Logs & runtime data
 logs/
 *.log
 dlq.json
 stats.json
+
+# ...but test fixtures and bundled examples ARE shipped (a fresh clone must
+# pass test_golden.py and run the replicate.py demo):
+!tests/samples/**/*.log
+!examples/samples/*.log
+
+# Web UI local login store (salted hash, generated on first run)
+.soc-ui-auth.json
 
 # Output directory
 soc_output/

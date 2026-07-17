@@ -1,6 +1,10 @@
 kafka-python-ng==2.2.2
 redis==5.0.1
 PyYAML>=6.0.1
-python-dateutil==2.8.2
 geoip2==4.8.0
-
+orjson>=3.9.0
+# Kafka messages are often snappy-compressed (rsyslog omkafka default in many
+# setups). kafka-python-ng needs this to DECODE them — without it the consumer
+# dies with UnsupportedCodecError on the first compressed batch (found on a
+# real deployment 2026-07-16). Pure wheel via cramjam, no system libs needed.
+python-snappy>=0.7.3

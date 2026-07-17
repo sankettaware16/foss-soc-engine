@@ -4,39 +4,167 @@ strategy: "stateful"
 id_regex: '(?P<id>[A-Z0-9]{10,12}):'
 end_signal: "removed"
 
-patterns:
-  - regex: '\s(?P<hostname>[a-zA-Z0-9-]+)\spostfix\/'
-    mapping: { "hostname": "host.name" }
+# ---------------------------------------------------------------------------
+# EDIT THIS for your site: the mail domain(s) this server considers INTERNAL.
+# Senders/recipients at these domains are tagged internal, everyone else
+# external. Plain domains only (no regex) - one or more list entries.
+# ---------------------------------------------------------------------------
+vars:
+  internal_domains: ["example.com"]
 
-  - regex: 'sasl_username=(?P<auth_user>[^, ]+)'
+# rsyslog prefixes each line with an ISO-8601 stamp (with offset). For a
+# correlated transaction the event time is its FIRST line (transaction start).
+timestamp:
+  regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\S+)'
+  format: iso8601
+
+patterns:
+  - prematch: "sasl_username="
+    regex: 'sasl_username=(?P<auth_user>[^, ]+)'
     mapping: { "auth_user": "user.name" }
 
   # Internal Sender
-  - regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>iitb\.ac\.in))>'
-    mapping: { "sender": "email.from", "s_domain": "email.sender_domain" }
+  - prematch: "from=<"
+    regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>%{internal_domains}))>'
+    mapping: { "sender": "email.from.address", "s_domain": "email.sender_domain" }
     static: { "email.internal_sender": true, "email.sender_type": "internal" }
 
   # External Sender
-  - regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>(?!iitb\.ac\.in)[^>]+))>'
-    mapping: { "sender": "email.from", "s_domain": "email.sender_domain" }
+  - prematch: "from=<"
+    regex: 'from=<(?P<sender>[^@]+@(?P<s_domain>(?!%{internal_domains})[^>]+))>'
+    mapping: { "sender": "email.from.address", "s_domain": "email.sender_domain" }
     static: { "email.internal_sender": false, "email.sender_type": "external" }
 
   # Internal Recipient
-  - regex: 'to=<(?P<recipient>[^@]+@(?P<r_domain>iitb\.ac\.in))>.*status=(?P<status>[a-z]+)'
-    mapping: { "recipient": "email.to", "r_domain": "email.recipient_domain", "status": "event.outcome" }
+  - prematch: "to=<"
+    regex: 'to=<(?P<recipient>[^@]+@(?P<r_domain>%{internal_domains}))>.*status=(?P<status>[a-z]+)'
+    mapping: { "recipient": "email.to.address", "r_domain": "email.recipient_domain", "status": "event.outcome" }
     static: { "email.external_recipient": false, "email.recipient_type": "internal" }
 
   # External Recipient
-  - regex: 'to=<(?P<recipient>[^@]+@(?P<r_domain>(?!iitb\.ac\.in)[^>]+))>.*status=(?P<status>[a-z]+)'
-    mapping: { "recipient": "email.to", "r_domain": "email.recipient_domain", "status": "event.outcome" }
+  - prematch: "to=<"
+    regex: 'to=<(?P<recipient>[^@]+@(?P<r_domain>(?!%{internal_domains})[^>]+))>.*status=(?P<status>[a-z]+)'
+    mapping: { "recipient": "email.to.address", "r_domain": "email.recipient_domain", "status": "event.outcome" }
     static: { "email.external_recipient": true, "email.recipient_type": "external" }
 
-  - regex: 'relay=(?P<relay_host>[^\[]+)\[(?P<relay_ip>[\d\.]+)\]'
+  - prematch: "relay="
+    regex: 'relay=(?P<relay_host>[^\[]+)\[(?P<relay_ip>[\d\.]+)\]'
     mapping: { "relay_host": "email.relay.hostname", "relay_ip": "email.relay.ip" }
 
-  - regex: 'client=(?P<host>.*?)\[(?P<ip>[\d\.]+)\]'
+  - prematch: "client="
+    regex: 'client=(?P<host>.*?)\[(?P<ip>[\d\.]+)\]'
     mapping: { "ip": "source.ip" }
 
-  - regex: 'postfix/bounce.*sender non-delivery notification: (?P<bounce_id>\w+)'
+  - prematch: "non-delivery notification"
+    regex: 'postfix/bounce.*sender non-delivery notification: (?P<bounce_id>\w+)'
     mapping: { "bounce_id": "event.reason" }
     static: { "event.outcome": "bounced" }
+
+
+  - prematch: "connect from"
+    regex: 'connect from (?P<client_host>[^\[]+)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "client_host": "source.domain", "ip": "source.ip" }
+    static: { "event.action": "smtp_connect" }
+
+  - prematch: "disconnect from"
+    regex: 'disconnect from (?P<client_host>[^\[]+)\[(?P<ip>[\d\.]+)\].*commands=(?P<commands>\d+)'
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "commands": "event.command_count|int" }
+    static: { "event.action": "smtp_disconnect" }
+
+  - prematch: "Anonymous TLS connection"
+    regex: 'Anonymous TLS connection established from (?P<client_host>[^\[]+)\[(?P<ip>[\d\.]+)\]: (?P<tls_version>TLSv[\d\.]+) with cipher (?P<cipher>[A-Z0-9\-]+)'
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "tls_version": "tls.version", "cipher": "tls.cipher" }
+    static: { "event.action": "tls_connection", "network.protocol": "smtp" }
+
+  - prematch: "TLS not available"
+    regex: 'warning: TLS not available with (?P<client_host>[^\[]+)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "client_host": "source.domain", "ip": "source.ip" }
+    static: { "event.action": "tls_unavailable", "event.outcome": "warning" }
+
+  - prematch: "message-id="
+    regex: 'message-id=<(?P<message_id>[^>]+)>'
+    mapping: { "message_id": "email.message_id" }
+
+  - prematch: "nrcpt="
+    regex: 'from=<(?P<sender>[^>]+)>, size=(?P<size>\d+), nrcpt=(?P<recipient_count>\d+)'
+    mapping: { "sender": "email.from.address", "size": "email.size|int", "recipient_count": "email.recipient_count|int" }
+
+  - prematch: "dsn="
+    regex: 'dsn=(?P<dsn>[245]\.[\d\.]+)'
+    mapping: { "dsn": "email.dsn" }
+
+  - prematch: "status=deferred"
+    regex: 'status=deferred'
+    static: { "event.outcome": "deferred" }
+
+  - prematch: "status=bounced"
+    regex: 'status=bounced'
+    static: { "event.outcome": "bounced" }
+
+  - prematch: "status=sent"
+    regex: 'status=sent'
+    static: { "event.outcome": "success" }
+
+  - prematch: "relay=local"
+    regex: 'relay=local'
+    static: { "email.delivery.type": "local" }
+
+  - prematch: "NOQUEUE"
+    regex: 'NOQUEUE: reject: RCPT from (?P<client_host>[^\[]+)\[(?P<ip>[\d\.]+)\]: (?P<code>\d+ \d+\.\d+\.\d+) (?P<reason>.*?); from=<(?P<sender>[^>]+)> to=<(?P<recipient>[^>]+)>'
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "code": "event.code", "reason": "event.reason", "sender": "email.from.address", "recipient": "email.to.address" }
+    static: { "event.action": "smtp_reject", "event.outcome": "failure" }
+
+  - prematch: "greylisting"
+    regex: 'greylisting'
+    static: { "event.reason": "greylisted" }
+
+  - prematch: "virus detected"
+    regex: 'virus detected: (?P<virus_name>.*)'
+    mapping: { "virus_name": "threat.name" }
+    static: { "event.category": "malware", "event.outcome": "detected" }
+
+  - prematch: "sasl_method="
+    regex: 'sasl_method=(?P<method>\w+)'
+    mapping: { "method": "authentication.method" }
+
+  # ------------------------------------------------------------------
+  # Auth attacks & connection failures (previously dead-lettered!)
+  # e.g. "warning: mail.example.com[1.2.3.4]: SASL PLAIN authentication
+  # failed: authentication failure"  <- brute-force attempts, SIEM gold
+  # ------------------------------------------------------------------
+  - prematch: "authentication failed"
+    regex: '(?P<client_host>[^\s\[]+)\[(?P<ip>[\d\.]+)\]: SASL (?P<method>[A-Za-z0-9-]+) authentication failed'
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "method": "authentication.method" }
+    static: { "event.category": "authentication", "event.action": "auth_failure", "event.outcome": "failure" }
+
+  - prematch: "SASL authentication failure"
+    regex: 'warning: SASL authentication failure: (?P<reason>.+)'
+    mapping: { "reason": "event.reason" }
+    static: { "event.category": "authentication", "event.action": "auth_failure", "event.outcome": "failure" }
+
+  - prematch: "lost connection after"
+    regex: 'lost connection after (?P<phase>[A-Z-]+) from (?P<client_host>[^\s\[]+)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "phase": "email.smtp_phase" }
+    static: { "event.action": "lost_connection", "event.outcome": "failure" }
+
+  - prematch: "timeout after"
+    regex: 'timeout after (?P<phase>[A-Z-]+) from (?P<client_host>[^\s\[]+)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "phase": "email.smtp_phase" }
+    static: { "event.action": "connection_timeout", "event.outcome": "failure" }
+
+  # Generic host.name extractor. KEPT LATE on purpose: for lines without a
+  # queue id the FIRST matching pattern wins, and this one matches every
+  # rsyslog-prefixed postfix line — putting it first would swallow the
+  # specific connect/TLS/disconnect events (found by the golden tests).
+  # ID'd transaction lines are unaffected (all patterns apply cumulatively).
+  - prematch: "postfix/"
+    regex: '\s(?P<hostname>[a-zA-Z0-9-]+)\spostfix\/'
+    mapping: { "hostname": "host.name" }
+
+  # Catch-all for any other postfix warning (config notes, rate limits...).
+  # KEEP THIS LAST: for lines without a queue id the first matching pattern
+  # wins, so specific patterns above must get first shot.
+  - prematch: "warning:"
+    regex: 'warning: (?P<reason>.+)'
+    mapping: { "reason": "event.reason" }
+    static: { "event.action": "warning", "log.level": "warning" }

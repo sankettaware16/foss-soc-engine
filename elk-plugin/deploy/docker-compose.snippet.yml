@@ -1,0 +1,60 @@
+# =====================================================================
+#  TLSOC Parser — add-on for /opt/TLSOCDockerDeploy/docker-compose.yml
+# ---------------------------------------------------------------------
+#  Paste the service below into the `services:` block of your existing
+#  docker-compose.yml. It runs the engine's Web UI as a HEADLESS API that
+#  the Kibana plugin proxies to. It touches no existing service.
+#
+#  Also add the plugin volume + config to your `kibana:` service (see the
+#  "kibana additions" block at the bottom), then rebuild + restart:
+#     docker compose up -d --build tlsoc-parser-ui kibana
+# =====================================================================
+
+  tlsoc-parser-ui:
+    build:
+      # Path to the FOSS SOC ENGINE REPO (the folder with webui/, core/, ...).
+      # Adjust to wherever you cloned/deployed it on this host.
+      context: /etc/foss-soc-engine
+      dockerfile: elk-plugin/backend/Dockerfile
+    image: tlsoc-parser-ui:1.0.0
+    container_name: tlsoc-parser-ui
+    restart: unless-stopped
+    environment:
+      # Kibana authenticates the user, and this port is internal-only, so the
+      # UI runs without its own login.
+      - SOC_UI_NO_AUTH=1
+      # Make the Monitor tab read the REAL engine's live stats.
+      - SOC_LOG_DIR=/engine/logs
+    volumes:
+      # Point at the REAL engine so rule/config edits + tests act on production,
+      # and the Monitor sees live metrics. Adjust host paths to your engine dir.
+      - /etc/foss-soc-engine/rules:/app/rules
+      - /etc/foss-soc-engine/config.yaml:/app/config.yaml
+      - /etc/foss-soc-engine/logs:/engine/logs:ro
+    # OPTIONAL: exact worker-PID liveness in the Monitor. Without this the
+    # Monitor still works (it uses stats freshness to prove the engine is alive).
+    # pid: "host"
+    #
+    # ------------------- TRUST BOUNDARY - READ THIS -------------------
+    # This container runs with SOC_UI_NO_AUTH=1: ANYONE who can reach
+    # port 8600 can edit rules/config of your production engine. That is
+    # safe ONLY because it has no `ports:` mapping — it is reachable
+    # exclusively from containers on this compose network (Kibana, which
+    # authenticates users itself). NEVER add a `ports:` section here and
+    # never attach this service to a shared/external Docker network.
+    # -------------------------------------------------------------------
+
+# ---------------------------------------------------------------------
+#  kibana additions  (merge into your existing `kibana:` service)
+# ---------------------------------------------------------------------
+#  kibana:
+#    volumes:
+#      # ...your existing mounts...
+#      # Mount the BUILT plugin so Kibana loads it (like nlToKql):
+#      - ./kibana/installed_plugins/tlsocParser:/usr/share/kibana/plugins/tlsocParser
+#    environment:
+#      # ...your existing env...
+#      # Tell the plugin where its backend is (internal Docker DNS name):
+#      - TLSOCPARSER_BACKENDURL=http://tlsoc-parser-ui:8600
+#    depends_on:
+#      - tlsoc-parser-ui

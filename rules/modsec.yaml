@@ -2,10 +2,18 @@ pattern_name: "modsec"
 
 strategy: "json_map"
 
+# ModSecurity time_stamp: "Tue Jul  9 13:31:48 2026" (asctime, server-local,
+# no zone). Declare the WAF host's zone (tz: "+05:30"); without it UTC is
+# assumed and the event is tagged log_assumed_utc.
+timestamp:
+  field: transaction.time_stamp
+  format: asctime
+
 mapping:
   # Transaction core
   transaction.unique_id: "event.id"
-  transaction.time_stamp: "event.created"
+  # (time_stamp is NOT copied into event.created: it is asctime text, which
+  # Elasticsearch cannot parse as a date. @timestamp is parsed from it above.)
   transaction.server_id: "observer.id"
 
   transaction.client_ip: "source.ip"
@@ -40,7 +48,7 @@ mapping:
   # Messages extraction (multi alerts)
   transaction.messages.*.message: "event.reason"
   transaction.messages.*.details.ruleId: "rule.id"
-  transaction.messages.*.details.severity: "event.severity"
+  transaction.messages.*.details.severity: "event.severity|int"
   transaction.messages.*.details.data: "event.payload"
   transaction.messages.*.details.match: "event.match"
   transaction.messages.*.details.file: "rule.file"

@@ -4,18 +4,17 @@ kafka:
   # -------------------------------------------------------------------------
   # Replace with your Kafka IP and Port
   bootstrap_servers: ["localhost:9092"]
-  
+
   # -------------------------------------------------------------------------
   # TOPIC SELECTION
   # -------------------------------------------------------------------------
   # Option 1: Single Topic (Plain Text)
-  # If you only have one topic, just write its name:
-  # input_topic: "soc-logs"
-  
+  # If you only have one topic, just write its name (like the default below).
+  #
   # Option 2: Multiple Topics (Regex)
-  # If you want to listen to multiple topics at once, use Regex.
-  # This example listens to 'linux', 'firewall', OR 'web':
-  input_topic: "^(linux-logs|firewall-logs|web-logs|.*)$"
+  # To listen to several topics at once, use a regex instead, e.g.:
+  # input_topic: "linux|firewall|web"
+  input_topic: "soc-logs"
 
   group_id: "soc-parser-group"
   auto_offset_reset: "latest"
@@ -24,6 +23,50 @@ batch:
   # Performance tuning: Write to disk every 1000 logs OR every 5 seconds
   size: 1000
   timeout_sec: 5
+
+runtime:
+  # -------------------------------------------------------------------------
+  # PARALLEL WORKERS
+  # -------------------------------------------------------------------------
+  # How many parser processes to run. Each worker joins the SAME Kafka
+  # consumer group, so Kafka automatically spreads topic partitions across
+  # them - this is how the engine uses every CPU core.
+  #
+  #   auto  -> use all CPU cores (recommended for production)
+  #   1     -> single process, logs to console (easiest for debugging)
+  #   <N>   -> exactly N workers
+  #
+  # IMPORTANT: create at least as many partitions per Kafka topic as workers,
+  # otherwise the extra workers sit idle (Kafka gives each partition to one
+  # consumer). You can also run workers across multiple machines: just point
+  # them at the same bootstrap_servers and group_id.
+  workers: 1
+
+  # How often (seconds) each worker writes its live stats file that the Web UI
+  # monitor reads. Lower = more real-time EPS/metrics; cost is negligible.
+  # Default 2. Raise it (e.g. 10) if you want fewer/lighter stat writes.
+  metrics_interval_sec: 2
+
+  # If writing parsed output to disk FAILS (disk full, IO error), the worker
+  # pauses Kafka consumption (nothing is lost - offsets stay put) and retries
+  # the flush every this-many seconds until the disk recovers. Default 5.
+  # flush_retry_sec: 5
+
+output:
+  # Keep output file handles open and write in large batches (always on).
+  # fsync: force every batch to physical disk (safer on power loss, slower).
+  fsync: false
+  # rotate_mb: roll each output file once it reaches this size, in MB.
+  #   0 -> never roll here (let logrotate / Filebeat handle rotation).
+  rotate_mb: 0
+  # dlq_rotate_mb: size cap per dead-letter file (logs/dlq/<source>.json).
+  # One prior generation (.1) is kept, so worst case = 2x this per source per
+  # worker. 0 -> unbounded (NOT recommended: a broken source fills the disk).
+  dlq_rotate_mb: 200
+  # include_original: carry the full raw log line in every event
+  # (event.original). true = easier debugging & forensics (default).
+  # false = roughly HALF the Elasticsearch storage; parsed fields unaffected.
+  include_original: true
 
 paths:
   # Where to save the parsed JSON files
@@ -41,23 +84,50 @@ program_mapping:
 
   # CASE 1: Linux Authentication (SSH, Sudo, Su)
   # Map multiple server types to the single 'linux_auth.yaml' rule
-  linux_server_auth: "linux_auth"
-  mail_server_auth: "linux_auth"
-  web_server_auth: "linux_auth"
+  nginx: "nginx_access"
+  postfix: "postfix"
+
+  # CHAINS: a source may also map to a LIST of rules - the engine tries them
+  # in order and the first rule that handles a line wins. Use this when one
+  # server tag emits several log shapes (web access + app errors + auth):
+  #   webserver01: ["nginx_access", "linux_auth"]
+#  web_server_auth: "linux_auth"
   
   # CASE 2: Web Servers (Nginx & Apache)
   # Nginx access logs are identical to Apache, so we reuse 'apache.yaml'
-  nginx_access_log: "apache_access"
-  apache_access_log: "apache_access"
+ # nginx_access_log: "apache_access"
+ # apache_access_log: "apache_access"
   
   # CASE 3: WAF & Security
-  modsecurity_log: "modsec"
+#  modsecurity_log: "modsec"
   
   # CASE 4: Mail Services
-  postfix: "postfix"
-  roundcube: "roundcube"
+#  postfix: "postfix"
+#  roundcube: "roundcube"
+
+# auth:
+#   # Web UI login. Uncomment to sign in with the SAME elastic user/password
+#   # as your ELK stack (the UI reads ELASTIC_PASSWORD from this file):
+#   env_file: "/opt/TLSOCDockerDeploy/.env"
+#   # Without this block (and no SOC_UI_USER/SOC_UI_PASSWORD env vars), the
+#   # UI generates a password on first start - see "Signing in" in the README.
+
+redis:
+  # Only used by 'stateful' rules (multi-line transaction correlation, e.g.
+  # postfix). Ignore this section if you run no stateful rules.
+  host: "localhost"
+  port: 6379
+  db: 0
+  # password: "your-redis-password"   # uncomment if Redis requires AUTH
 
 geoip:
+  # One switch for ALL IP enrichment (geo + ASN). false = skip both lookups.
   enabled: true
-  # Ensure your MMDB file is placed inside the 'database' folder
+  # Ensure your MMDB files are placed inside the 'database' folder.
+  # Both are offline, one-time downloads from MaxMind (see README):
+  #   City -> source.geo.* (country, city, lat/lon)
   db_path: "database/GeoLite2-City.mmdb"
+  #   ASN  -> source.as.number + source.as.organization.name (who OWNS the IP:
+  #   ISP, cloud provider, hosting company - great for spotting VPS/botnet traffic).
+  # Comment the next line out to disable just the ASN lookup.
+  asn_db_path: "database/GeoLite2-ASN.mmdb"

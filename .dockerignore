@@ -1,0 +1,19 @@
+# Keep the Docker build context small & fast (esp. the multi-GB sample logs).
+.git
+.venv-ui/
+build_out/
+release/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+logs/
+*.log
+nginx.log
+sample_logs.txt
+ngnix_test.txt
+database/*.mmdb
+FOSS SOC Console.html
+elk-plugin/kibana-plugin/node_modules/
+elk-plugin/kibana-plugin/build/
+elk-plugin/kibana-plugin/target/

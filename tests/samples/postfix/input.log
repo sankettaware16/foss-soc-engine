@@ -1,0 +1,13 @@
+2026-01-22T12:27:51+00:00 smtpnode1 postfix/smtpd[4123]: connect from client.example.net[203.0.113.45]
+2026-01-22T12:27:51+00:00 smtpnode1 postfix/smtpd[19876]: Anonymous TLS connection established from unknown[203.0.113.45]: TLSv1.2 with cipher ECDHE-RSA-AES128-GCM-SHA256 (128/128 bits)
+2026-01-22T12:27:51+00:00 smtpnode1 postfix/smtpd[19876]: A7F9C20D1AB: client=unknown[203.0.113.45], sasl_method=PLAIN, sasl_username=jdoe
+2026-01-22T12:27:52+00:00 smtpnode1 postfix/cleanup[19881]: A7F9C20D1AB: message-id=<abc123@mail.example>
+2026-01-22T12:27:52+00:00 smtpnode1 postfix/qmgr[2025]: A7F9C20D1AB: from=<jdoe@example.com>, size=3245, nrcpt=1 (queue active)
+2026-01-22T12:27:53+00:00 smtpnode1 postfix/smtp[19890]: A7F9C20D1AB: to=<someone@example.org>, relay=mx.example.org[198.51.100.9]:25, delay=1.2, delays=1.1/0/0/0.1, dsn=2.0.0, status=sent (250 ok)
+2026-01-22T12:27:53+00:00 smtpnode1 postfix/qmgr[2025]: A7F9C20D1AB: removed
+ warning: mail.badactor.example[203.0.113.66]: SASL PLAIN authentication failed: authentication failure
+ warning: SASL authentication failure: Password verification failed
+ lost connection after AUTH from mail.badactor.example[203.0.113.66]
+ timeout after DATA from slow.example[198.18.0.9]
+ warning: /etc/postfix/main.cf, line 115: overriding earlier entry: smtpd_client_connection_rate_limit=5
+2026-01-22T12:28:00+00:00 smtpnode1 postfix/smtpd[4123]: disconnect from client.example.net[203.0.113.45] ehlo=1 auth=1 mail=1 rcpt=1 data=1 quit=1 commands=6

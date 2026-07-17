@@ -1,0 +1,14 @@
+{
+  "id": "tlsocParser",
+  "version": "1.0.0",
+  "kibanaVersion": "8.19.12",
+  "owner": {
+    "name": "TLSOC",
+    "githubTeam": "tlsoc"
+  },
+  "description": "Test logs, manage parser rules, edit config, ECS lookup and live engine monitoring - the FOSS SOC parsing console, inside Kibana.",
+  "server": true,
+  "ui": true,
+  "requiredPlugins": [],
+  "optionalPlugins": []
+}

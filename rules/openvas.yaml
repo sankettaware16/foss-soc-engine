@@ -4,6 +4,11 @@ strategy: "xml_xpath"
 # Iterate over every vulnerability found in the report
 items_xpath: ".//results/result"
 
+# Each result's creation_time is ISO-8601 (Zulu) — the finding's real time
+timestamp:
+  field: "creation_time"
+  format: iso8601
+
 mapping:
   # 1. Identity & Context
   "name": "vulnerability.name"
@@ -18,7 +23,7 @@ mapping:
   # 3. Severity & Confidence
   "threat": "vulnerability.threat"
   "severity": "vulnerability.severity|float"
-  "nvt/cvss_base": "vulnerability.cvss.base_score|float"
+  "nvt/cvss_base": "vulnerability.score.base|float"
   "qod/value": "vulnerability.confidence|int"            # Quality of Detection (Filters out False Positives)
 
   # 4. Descriptions & Remediation

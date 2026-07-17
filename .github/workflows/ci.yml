@@ -1,0 +1,36 @@
+# CI: every push / pull request must pass the full validation + regression
+# suite. This is what makes rule contributions safe to accept: if a change
+# to any rule alters any golden-sample answer, the build fails with a diff.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Static config + rules + ECS validation
+        run: python test_config.py --skip-kafka
+
+      - name: Timestamp regression suite (49 cases)
+        run: python test_timestamps.py
+
+      - name: GeoIP/ASN enrichment suite (real-DB cases auto-skip)
+        run: python test_enrichment.py
+
+      - name: Golden samples — one exam per rule
+        run: python test_golden.py

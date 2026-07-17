@@ -1,0 +1,25 @@
+Jun 16 10:00:00 mail sshd[1123]: Accepted password for alice from 203.0.113.4 port 51514 ssh2
+Jun 16 10:00:01 mail sshd[1124]: Failed password for invalid user bob from 198.51.100.8 port 40222 ssh2
+Jun 16 10:00:02 mail sshd[1125]: Invalid user oracle from 5.6.7.8
+Jun 16 10:00:03 mail sshd[1126]: Received disconnect from 1.2.3.4 port 5555:11: disconnected by user
+Jun 16 10:00:04 h sudo:   alice : user NOT in sudoers ; TTY=pts/0 ; PWD=/home ; USER=root ; COMMAND=/bin/ls
+Jun 16 10:00:05 h sudo:   alice : 3 incorrect password attempts ; TTY=pts/0 ; PWD=/home ; USER=root ; COMMAND=/bin/ls
+Jun 16 10:00:06 h sudo: pam_unix(sudo:session): session opened for user root(uid=0) by alice(uid=1000)
+Jun 16 10:00:07 h su[123]: FAILED SU (to root) alice on pts/0
+Jun 16 10:00:08 h systemd-logind[9]: New session 41 of user alice.
+Jun 16 10:00:09 h systemd-logind[9]: Removed session 41.
+Jun 16 10:00:10 h CRON[77]: pam_unix(cron:session): session opened for user root
+Jun 16 10:00:11 h passwd[88]: password for 'bob' changed by 'root'
+Jun 16 10:00:12 h polkitd[55]: Registered Authentication Agent for unix-session:2
+Jun 16 10:00:13 h kernel: eth0 link up 1000Mbps full duplex - must not match
+Jun 16 10:03:05 mail sshd[1130]: Accepted publickey for deploy from 192.0.2.55 port 33002 ssh2
+Jun 16 10:03:40 mail sshd[1131]: Failed password for www-data from 198.51.100.77 port 40230 ssh2
+Jun 16 10:04:00 mail sshd[2001]: Server listening on 0.0.0.0 port 22.
+Jun 16 10:04:00 mail sshd[2001]: Server listening on :: port 22.
+Jun 16 10:04:05 mail (systemd): pam_unix(systemd-user:session): session opened for user alice(uid=1003) by alice(uid=0)
+Jun 16 10:04:30 mail (systemd): pam_unix(systemd-user:session): session closed for user alice
+Jun 16 10:05:00 h su[2681020]: pam_unix(su:session): session opened for user root(uid=0) by alice(uid=0)
+Jun 16 10:05:20 h su[2681020]: pam_unix(su:session): session closed for user root
+Jun 16 10:05:40 mail sshd[293471]: Disconnecting authenticating user admin 198.51.100.7 port 38132: Too many authentication failures [preauth]
+Jun 16 10:05:41 mail sshd[293471]: PAM service(sshd) ignoring max retries; 6 > 3
+Jun 16 10:05:50 h systemd-logind[721]: Session 6009 logged out. Waiting for processes to exit.

@@ -1,0 +1,5 @@
+2026-05-21T10:54:11+00:00 vh3 nvh_web: 23.98.142.187 - - [21/May/2026:10:54:11 +0530] "GET /acad/ HTTP/2.0" 503 299 "-" "Mozilla/5.0 ChatGPT-User/1.0"
+2026-05-21T10:54:14+00:00 vh3 nvh_web: 193.186.4.139 - alice [21/May/2026:10:54:14 +0530] "GET /portal HTTP/2.0" 200 1024 "https://www.google.com/" "Mozilla/5.0"
+2026-06-02T08:00:05+00:00 web1 nginx: 2026/06/02 08:00:04 [error] 11#0: *7 connect() failed (111: Connection refused) while connecting to upstream, client: 1.2.3.4, server: s1, request: "GET /x HTTP/1.1", upstream: "http://u", host: "h"
+2026-06-02T08:00:05+05:30 web1 nginx: 2026/06/02 08:00:05 [info] 1#0: *9 peer closed connection in SSL handshake
+2026-06-02T08:00:06+00:00 web1 nginx: 2026/06/02 08:00:06 [alert] 1#0: 768 worker_connections are not enough

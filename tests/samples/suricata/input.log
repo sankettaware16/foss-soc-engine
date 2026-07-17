@@ -1,0 +1,2 @@
+07/09/2023-13:31:48.123456  [**] [1:2001219:20] ET SCAN Nmap Scripting Engine User-Agent Detected [**] [Classification: Attempted Recon] [Priority: 2] {TCP} 198.51.100.9:4444 -> 203.0.113.7:80
+01/15/2026-08:00:00.000001  [**] [1:2100498:7] GPL ATTACK_RESPONSE id check returned root [**] [Classification: Potentially Bad Traffic] [Priority: 2] {TCP} 10.0.0.5:80 -> 10.0.0.9:51000

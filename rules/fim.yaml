@@ -2,6 +2,13 @@ pattern_name: "fim"
 
 strategy: "json_map"
 
+# The FIM JSON currently carries NO time field, so events keep ingest time
+# (tagged event.timestamp_source: ingest_fallback). If the agent adds one,
+# declare it like:
+# timestamp:
+#   field: "@timestamp"      # dot-path into the raw JSON
+#   format: iso8601
+
 mapping:
 
 #  raw.@timestamp: "event.created"
@@ -12,7 +19,7 @@ mapping:
 
   file_path: "file.path"
   owner: "file.owner"
-  owner_uid: "file.owner_uid"
+  owner_uid: "file.uid"
   mode: "file.mode"
 
 static:
