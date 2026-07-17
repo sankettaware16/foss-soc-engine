@@ -42,5 +42,5 @@ Shipped and maintained:
 
 ## Proposing changes
 
-Open a [feature request](https://github.com/sankettaware16/tlsoc-engine/issues) using the template, or start with a
+Open a [feature request](https://github.com/sankettaware16/foss-soc-engine/issues) using the template, or start with a
 discussion issue for larger designs. Roadmap changes land here via pull request.

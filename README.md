@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/sankettaware16/tlsoc"><img src="https://img.shields.io/badge/TLSOC-Ecosystem-4a6edb" alt="TLSOC Ecosystem"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"/></a>
-  <a href="https://github.com/sankettaware16/tlsoc-engine/actions/workflows/ci.yml"><img src="https://github.com/sankettaware16/tlsoc-engine/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/sankettaware16/foss-soc-engine/actions/workflows/ci.yml"><img src="https://github.com/sankettaware16/foss-soc-engine/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/python-3.8%2B-3776AB?logo=python&logoColor=white" alt="Python 3.8+"/>
   <img src="https://img.shields.io/badge/schema-Elastic%20Common%20Schema-005571" alt="ECS"/>
 </p>
@@ -28,7 +28,8 @@
 
 ## Overview
 
-TLSOC Engine (historically *FOSS SOC Engine*) is the parsing and normalization core of
+TLSOC Engine — this `foss-soc-engine` repository, historically *FOSS SOC Engine* —
+is the parsing and normalization core of
 the [TLSOC platform](https://github.com/sankettaware16/tlsoc). It consumes raw logs
 from Apache Kafka, dynamically routes each line to the correct parser based on log
 metadata, and normalizes it into structured,
@@ -94,16 +95,16 @@ The engine's place in the platform:
 
 - Python 3.8+ on Linux (Ubuntu/Debian recommended for systemd integration)
 - Apache Kafka (input source) — for example via
-  [tlsoc-docker-deploy](https://github.com/sankettaware16/tlsoc-docker-deploy)
+  [TLSOCDockerDeploy](https://github.com/sankettaware16/TLSOCDockerDeploy)
 - Redis (only if you use `stateful` rules)
 - Optional: a free MaxMind license key for GeoIP/ASN enrichment
 
 ### Install
 
 ```bash
-git clone https://github.com/sankettaware16/tlsoc-engine.git
-sudo mv tlsoc-engine /etc/
-cd /etc/tlsoc-engine
+git clone https://github.com/sankettaware16/foss-soc-engine.git
+sudo mv foss-soc-engine /etc/
+cd /etc/foss-soc-engine
 export MAXMIND_LICENSE_KEY=YOUR_KEY   # optional — enables GeoIP/ASN download
 chmod +x install.sh
 ./install.sh
@@ -207,9 +208,9 @@ TLSOC Engine is one component of TLSOC, the open-source Security Operations Plat
 | Repository | Purpose |
 |---|---|
 | [tlsoc](https://github.com/sankettaware16/tlsoc) | Ecosystem home — documentation, architecture, roadmap |
-| **tlsoc-engine** (this repository) | Log parsing and ECS normalization engine |
-| [tlsoc-docker-deploy](https://github.com/sankettaware16/tlsoc-docker-deploy) | TLS-secured core stack (Kafka, Logstash, Elasticsearch, Kibana) |
-| [tlsoc-reporting](https://github.com/sankettaware16/tlsoc-reporting) | Declarative executive reporting (HTML/PDF) |
+| **foss-soc-engine** (this repository) | Log parsing and ECS normalization engine |
+| [TLSOCDockerDeploy](https://github.com/sankettaware16/TLSOCDockerDeploy) | TLS-secured core stack (Kafka, Logstash, Elasticsearch, Kibana) |
+| [tlsoc-reporting-framework](https://github.com/sankettaware16/tlsoc-reporting-framework) | Declarative executive reporting (HTML/PDF) |
 
 ## Roadmap
 
@@ -247,7 +248,7 @@ license and are not part of this project.
 
 <p align="center">
   <a href="https://github.com/sankettaware16/tlsoc">TLSOC</a> •
-  <a href="https://github.com/sankettaware16/tlsoc-engine">Engine</a> •
-  <a href="https://github.com/sankettaware16/tlsoc-docker-deploy">Deploy</a> •
-  <a href="https://github.com/sankettaware16/tlsoc-reporting">Reporting</a>
+  <a href="https://github.com/sankettaware16/foss-soc-engine">Engine</a> •
+  <a href="https://github.com/sankettaware16/TLSOCDockerDeploy">Deploy</a> •
+  <a href="https://github.com/sankettaware16/tlsoc-reporting-framework">Reporting</a>
 </p>

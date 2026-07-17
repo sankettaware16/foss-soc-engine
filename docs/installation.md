@@ -13,7 +13,7 @@ Full installation guide for TLSOC Engine on a Linux host.
 
 - Python 3.8+
 - Apache Kafka (input source) — for example via
-  [tlsoc-docker-deploy](https://github.com/sankettaware16/tlsoc-docker-deploy)
+  [TLSOCDockerDeploy](https://github.com/sankettaware16/TLSOCDockerDeploy)
 - Redis (required only for `stateful` parsing rules)
 
 ### System
@@ -59,9 +59,9 @@ enrichment is simply skipped (and `preflight.py` warns you about it).
 ## Step 1 — Clone the repository
 
 ```bash
-git clone https://github.com/sankettaware16/tlsoc-engine.git
-sudo mv tlsoc-engine /etc/
-cd /etc/tlsoc-engine
+git clone https://github.com/sankettaware16/foss-soc-engine.git
+sudo mv foss-soc-engine /etc/
+cd /etc/foss-soc-engine
 ```
 
 ## Step 2 — Run the installer

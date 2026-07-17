@@ -65,8 +65,8 @@ Long-form content belongs in `docs/`; the README stays an overview.
 ## Development setup
 
 ```bash
-git clone https://github.com/sankettaware16/tlsoc-engine.git
-cd tlsoc-engine
+git clone https://github.com/sankettaware16/foss-soc-engine.git
+cd foss-soc-engine
 pip3 install -r requirements.txt
 python3 test_config.py --skip-kafka    # everything static validates without Kafka/Redis
 ```

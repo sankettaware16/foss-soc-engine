@@ -127,7 +127,7 @@ as a fallback, but the nested form is the documented one):
 
 ```yaml
 auth:
-  env_file: "/opt/tlsoc-docker-deploy/.env"   # any .env containing ELASTIC_PASSWORD
+  env_file: "/opt/TLSOCDockerDeploy/.env"   # any .env containing ELASTIC_PASSWORD
 ```
 
 Restart the UI and confirm which credential source it picked — the startup log
@@ -136,7 +136,7 @@ always says:
 ```bash
 sudo systemctl restart foss-soc-ui
 journalctl -u foss-soc-ui -n 40 --no-pager | grep '\[auth\]'
-#  -> [auth] credentials from elk-env:/opt/tlsoc-docker-deploy/.env (user 'elastic')
+#  -> [auth] credentials from elk-env:/opt/TLSOCDockerDeploy/.env (user 'elastic')
 ```
 
 While an ELK `.env` is in use, the generated local login is **disabled** (no

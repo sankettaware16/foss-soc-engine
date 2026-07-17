@@ -83,7 +83,7 @@ processor building the same object, and `key: '%{[fields.program]}'`.)
 
 The reference agentless producer — rsyslog + omkafka with a hardened,
 rotation-safe configuration — is provided by
-[tlsoc-docker-deploy — onboarding](https://github.com/sankettaware16/tlsoc-docker-deploy/blob/main/docs/onboarding.md).
+[TLSOC Docker Deploy — onboarding](https://github.com/sankettaware16/TLSOCDockerDeploy/blob/main/docs/onboarding.md).
 
 ## Delivery guarantees (no silent data loss)
 
