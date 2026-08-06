@@ -57,7 +57,11 @@ the source to it in configuration.
   the log line (CLF, ISO 8601/RFC 5424, RFC 3164, epoch, and more), normalized to
   UTC, with visible fallbacks (`event.timestamp_source`) — never silent.
 - **Offline GeoIP + ASN enrichment** — one-time MaxMind database download, then
-  every lookup is a local file read with per-process LRU caching.
+  every lookup is a local file read with per-process LRU caching. Both directions
+  are enriched: `source.ip` (who is hitting you) *and* `destination.ip` (where
+  your proxy traffic goes), ambiguous endpoint values are classified from
+  `.address` into `.ip`/`.domain` per ECS, and fields MaxMind doesn't know are
+  omitted — never emitted as nulls.
 - **No silent data loss** — at-least-once Kafka delivery (offsets committed only
   after durable disk flush), per-source dead-letter queues with storm warnings,
   expired stateful transactions emitted and tagged instead of dropped.
@@ -155,6 +159,8 @@ python3 replicate.py --rsyslog <conf>         # dry-run the full pipeline, no Ka
 python3 test_rules.py                         # interactive rule tester
 python3 test_file.py sample_logs.txt AUTO     # bulk-parse a file, auto-detect rules
 python3 ecs_helper.py check rules/myrule.yaml # ECS field validation ("spell-check")
+python3 benchmark.py                          # EPS + parse latency of YOUR setup, per rule
+python3 benchmark.py --live                   # pipeline lag of the RUNNING deployment
 ```
 
 Tool reference and testing guide: [docs/development.md](docs/development.md).
@@ -165,6 +171,26 @@ Every field a rule produces must be a valid ECS field, and every rule gets a
 golden-sample exam in CI. The step-by-step guide — including the **AI master
 prompt** that turns raw log samples into a finished, ECS-compliant rule — is in
 [docs/writing-rules.md](docs/writing-rules.md).
+
+## Timestamps: which field means what
+
+Every event carries several times. They answer different questions — dashboards,
+latency triage, and audits each want a different one:
+
+| Field | Meaning | Where it comes from |
+|---|---|---|
+| `@timestamp` | When the event **really happened**. This is what dashboards should sort and filter on. | Parsed from the log line itself (e.g. `[05/Aug/2026:09:38:46 +0000]` in an access log), normalized to UTC. |
+| `event.ingested` | When the **engine parsed** it. | The engine's own clock. |
+| `event.original_time` | The **raw timestamp string** exactly as it appeared in the log — for audit and debugging. | Copied verbatim, never normalized. |
+| `event.created` | When the **shipper** (rsyslog) stamped the line, where a rule maps it. | The rsyslog prefix on the line. |
+| `event.timestamp_source` | **How** `@timestamp` was obtained — every fallback is visible, never silent. | `log` = parsed, zone known · `log_assumed_utc` = parsed, zone assumed · `ingest_fallback` = unparseable, ingest time kept. |
+
+**Pipeline lag** (source host → rsyslog → Kafka → engine) is computable per
+event as `event.ingested − @timestamp`, and `benchmark.py --live` reports it
+per module (avg/p50/p95/max) straight from your output files. Two readings
+worth memorizing: steady seconds-level lag is healthy batching; **negative**
+lag or lag that matches your UTC offset (e.g. ~5h30m) means a *source host's*
+clock or timezone label is wrong — fix the source, not the engine.
 
 ## Repository Structure
 
@@ -180,6 +206,7 @@ prompt** that turns raw log samples into a finished, ECS-compliant rule — is i
 ├── examples/             # Runnable rsyslog + sample-log example
 ├── tests/samples/        # Golden-sample exams, one folder per rule
 ├── ecs_helper.py         # ECS field checker/fixer/search
+├── benchmark.py          # Capacity (EPS/latency) + live pipeline-lag benchmark
 ├── preflight.py          # Pre-run validator (config + live infrastructure)
 ├── replicate.py          # Local dry-run of the rsyslog→Kafka→engine pipeline
 ├── test_*.py             # Regression battery (config, timestamps, enrichment, golden)

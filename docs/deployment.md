@@ -129,8 +129,27 @@ GeoIP-cold-cache, Redis-backed stateful rules, and very long lines all cost more
 Multiply per-core by your worker count for a machine estimate, then add machines
 to the consumer group to go higher. Reaching a clean 1M EPS on one box
 realistically also wants the optional C Kafka client
-(`pip install confluent-kafka`). Benchmark YOUR rules on YOUR logs with
-`python3 test_file.py <logfile> <rule>` before capacity planning.
+(`pip install confluent-kafka`).
+
+**Don't estimate — measure your own deployment.** `benchmark.py` runs on the
+machine, with the config and rules you actually deploy:
+
+```bash
+python3 benchmark.py               # per-rule EPS/core + parse latency (avg/p50/p95/p99),
+                                   # blended mix, and a projection for your worker count
+python3 benchmark.py --seconds 3   # longer window = steadier numbers
+python3 benchmark.py --rule myrule --file /var/log/mysample.log   # YOUR logs
+
+python3 benchmark.py --live        # the RUNNING pipeline: per-module lag
+                                   # (event.ingested − @timestamp) from the output files
+```
+
+The default mode answers "how much can this box parse" (slowest rules float to
+the top — that's where optimization pays). `--live` answers "how far behind is
+my data right now, and which module" — steady seconds-level lag is normal
+batching; growing lag means the consumer is behind (more workers/partitions);
+negative or UTC-offset-sized lag means a **source host's** clock or timezone
+label is wrong, not the engine.
 
 ## Performance knobs (all optional, all in `config.yaml`)
 
