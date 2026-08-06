@@ -358,20 +358,23 @@ class UniversalEngine:
 
     def _enrich_event(self, event):
         if not event: return None
-        source_ip = event.get('source', {}).get('ip')
-        if source_ip:
-            geo = self.geoip.enrich(source_ip)
+        # Both directions get geo/ASN: inbound sources (web/mail: public
+        # source.ip) AND outbound destinations (proxy logs like squid:
+        # internal client, public destination.ip). Private/unknown IPs
+        # return no data and the per-process LRU caches that verdict, so
+        # the extra side costs nothing on the hot path.
+        for side in ('source', 'destination'):
+            ip = event.get(side, {}).get('ip')
+            if not ip:
+                continue
+            geo = self.geoip.enrich(ip)
             if geo:
-                if 'source' not in event:
-                    event['source'] = {}
-                event['source']['geo'] = geo
-            # ASN enrichment (who owns the IP): source.as.number /
-            # source.as.organization.name. Skipped when the ASN mmdb is absent.
-            asn = self.geoip.enrich_asn(source_ip)
+                event[side]['geo'] = geo
+            # ASN (who owns the IP): <side>.as.number /
+            # <side>.as.organization.name. Skipped when the ASN mmdb is absent.
+            asn = self.geoip.enrich_asn(ip)
             if asn:
-                if 'source' not in event:
-                    event['source'] = {}
-                event['source']['as'] = asn
+                event[side]['as'] = asn
         return event
 
     def _process_stateless(self, log_input):
