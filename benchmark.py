@@ -289,7 +289,7 @@ def print_utilization(results, blended, workers):
     caps = {s["name"]: s["eps"] * workers for s in results}
     rows = []
     for rule, st in (stats.get("parser_stats") or {}).items():
-        avg_rate = (st.get("events") or 0) / uptime
+        avg_rate = (st.get("parsed_events") or st.get("events") or 0) / uptime
         if avg_rate <= 0 or rule not in caps or not caps[rule]:
             continue
         rows.append((rule, avg_rate, 100.0 * avg_rate / caps[rule]))
