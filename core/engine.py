@@ -1,6 +1,7 @@
 import re
 import time
 import logging
+import ipaddress
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from utils.geoip import GeoIPClient
@@ -93,6 +94,11 @@ def _prematch_hit(pm, raw):
 
 # Token syntax for the optional rule-level `vars:` block: %{name}
 _VAR_TOKEN = re.compile(r'%\{([A-Za-z_][A-Za-z0-9_]*)\}')
+
+# What may be copied from <side>.address into <side>.domain: hostname
+# characters only. CIDRs (10.0.0.0/24), comma lists and sockets fail this
+# and stay in .address, exactly as ECS intends for unclassifiable values.
+_HOSTNAME_RE = re.compile(r'[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?')
 
 
 def substitute_vars(rule_config):
@@ -364,7 +370,25 @@ class UniversalEngine:
         # return no data and the per-process LRU caches that verdict, so
         # the extra side costs nothing on the hot path.
         for side in ('source', 'destination'):
-            ip = event.get(side, {}).get('ip')
+            ep = event.get(side)
+            if not isinstance(ep, dict):
+                continue
+            # ECS: an ambiguous endpoint (IP or hostname — e.g. squid's
+            # TCP_DENIED destination) is captured raw in <side>.address and
+            # duplicated into .ip or .domain once classified. Doing that here
+            # keeps rules to a single .address mapping and lets the geo/ASN
+            # step below see the IP. Values that are NEITHER (CIDR ranges,
+            # target lists — e.g. nessus "10.0.0.0/24") stay .address-only.
+            addr = ep.get('address')
+            if (isinstance(addr, str) and addr
+                    and 'ip' not in ep and 'domain' not in ep):
+                try:
+                    ipaddress.ip_address(addr)
+                    ep['ip'] = addr
+                except ValueError:
+                    if _HOSTNAME_RE.fullmatch(addr):
+                        ep['domain'] = addr
+            ip = ep.get('ip')
             if not ip:
                 continue
             geo = self.geoip.enrich(ip)
