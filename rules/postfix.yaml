@@ -142,14 +142,16 @@ patterns:
     mapping: { "reason": "event.reason" }
     static: { "event.category": "authentication", "event.action": "auth_failure", "event.outcome": "failure" }
 
+  # The phase may carry a byte count: "lost connection after DATA (532625
+  # bytes) from unknown[1.2.3.4]" — the parenthetical is optional below.
   - prematch: "lost connection after"
-    regex: 'lost connection after (?P<phase>[A-Z-]+) from (?P<client_host>[^\s\[]+)\[(?P<ip>[\d\.]+)\]'
-    mapping: { "client_host": "source.domain", "ip": "source.ip", "phase": "email.smtp_phase" }
+    regex: 'lost connection after (?P<phase>[A-Z-]+)(?: \((?P<bytes>\d+) bytes\))? from (?P<client_host>[^\s\[]+)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "phase": "email.smtp_phase", "bytes": "network.bytes|int" }
     static: { "event.action": "lost_connection", "event.outcome": "failure" }
 
   - prematch: "timeout after"
-    regex: 'timeout after (?P<phase>[A-Z-]+) from (?P<client_host>[^\s\[]+)\[(?P<ip>[\d\.]+)\]'
-    mapping: { "client_host": "source.domain", "ip": "source.ip", "phase": "email.smtp_phase" }
+    regex: 'timeout after (?P<phase>[A-Z-]+)(?: \((?P<bytes>\d+) bytes\))? from (?P<client_host>[^\s\[]+)\[(?P<ip>[\d\.]+)\]'
+    mapping: { "client_host": "source.domain", "ip": "source.ip", "phase": "email.smtp_phase", "bytes": "network.bytes|int" }
     static: { "event.action": "connection_timeout", "event.outcome": "failure" }
 
   # Generic host.name extractor. KEPT LATE on purpose: for lines without a
