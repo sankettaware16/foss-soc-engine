@@ -186,6 +186,8 @@ def run_synthetic(args, config):
     print(f"  Python         : {sys.version.split()[0]}   orjson: {'yes' if orjson_on else 'NO (pip install orjson for ~2x serialize)'}")
     print(f"  Measure window : {args.seconds:.1f}s per rule   (parse latency = engine only;")
     print(f"                   output write ≈ +1µs/event, Kafka client overhead excluded)")
+    print(f"  How to read    : latency = µs per event. p50 = the typical (median) event;")
+    print(f"                   p95/p99 = the slowest 1-in-20 / 1-in-100 events.")
     print()
 
     results = []
@@ -241,6 +243,64 @@ def run_synthetic(args, config):
     print("   - Your real traffic mix matters: weight by YOUR per-source volumes.")
     print("   - Stateful rules pay a real-Redis round trip per line and share one")
     print("     Redis across workers; heavy stateful load scales sub-linearly.")
+
+    print_utilization(results, blended, workers)
+
+
+def _bar(pct, width=24):
+    filled = min(width, max(1 if pct > 0 else 0, round(pct / 100 * width)))
+    return "[" + "#" * filled + "." * (width - filled) + "]"
+
+
+def print_utilization(results, blended, workers):
+    """Compare live engine load (logs/stats.json, written every couple of
+    seconds by main.py) against the capacity just measured."""
+    log_dir = os.environ.get("SOC_LOG_DIR") or os.path.join(HERE, "logs")
+    stats_path = os.path.join(log_dir, "stats.json")
+    try:
+        with open(stats_path, encoding="utf-8") as f:
+            stats = json.load(f)
+    except (OSError, ValueError):
+        print()
+        print(f"  Utilization: engine not running here (no {stats_path}) —")
+        print("  start it and re-run to see live load vs this capacity.")
+        return
+
+    now_eps = float(stats.get("eps") or 0.0)
+    uptime = max(1, int(stats.get("uptime_sec") or 0))
+    ts = parse_ts(stats.get("timestamp"))
+    age = None
+    if ts:
+        age = (datetime.now(ts.tzinfo) - ts).total_seconds()
+
+    capacity = blended * workers
+    overall = min(999.9, 100.0 * now_eps / capacity) if capacity else 0.0
+    print()
+    print("  " + "=" * 70)
+    print("  CURRENT UTILIZATION  (live engine load vs the capacity above)")
+    print("  " + "=" * 70)
+    if age is not None and age > 60:
+        print(f"  NOTE: stats file is {age:.0f}s old — engine may be stopped;")
+        print("        numbers below reflect its last written state.")
+    print(f"  Engine now     : {now_eps:,.1f} EPS   capacity: ~{capacity:,.0f} EPS")
+    print(f"  Overall        : {_bar(overall)} {overall:.2f}% used "
+          f"-> ~{max(0.0, 100 - overall):.0f}% headroom")
+
+    caps = {s["name"]: s["eps"] * workers for s in results}
+    rows = []
+    for rule, st in (stats.get("parser_stats") or {}).items():
+        avg_rate = (st.get("events") or 0) / uptime
+        if avg_rate <= 0 or rule not in caps or not caps[rule]:
+            continue
+        rows.append((rule, avg_rate, 100.0 * avg_rate / caps[rule]))
+    if rows:
+        print()
+        print(f"  Per rule (average rate since engine start, {uptime}s ago):")
+        for rule, rate, pct in sorted(rows, key=lambda r: -r[2]):
+            print(f"    {rule:<20}{rate:>9,.1f} EPS  {_bar(pct)} {pct:.2f}% of capacity")
+    print()
+    print("  Rule of thumb: worry when sustained utilization passes ~50% —")
+    print("  that is the moment to add partitions + workers (or a machine).")
 
 
 # --------------------------------------------------------------------------- #

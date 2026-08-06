@@ -159,7 +159,7 @@ python3 replicate.py --rsyslog <conf>         # dry-run the full pipeline, no Ka
 python3 test_rules.py                         # interactive rule tester
 python3 test_file.py sample_logs.txt AUTO     # bulk-parse a file, auto-detect rules
 python3 ecs_helper.py check rules/myrule.yaml # ECS field validation ("spell-check")
-python3 benchmark.py                          # EPS + parse latency of YOUR setup, per rule
+python3 benchmark.py                          # EPS + latency + live utilization % of YOUR setup
 python3 benchmark.py --live                   # pipeline lag of the RUNNING deployment
 ```
 
