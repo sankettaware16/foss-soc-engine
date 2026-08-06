@@ -79,6 +79,74 @@ patterns:
 
 
   # ============================================================
+  # VHOST-FIRST ACCESS LOG, NO SYSLOG HEADER
+  # nginx log_format that starts with $host, shipped raw (no
+  # rsyslog "<ts> <host> <prog>:" prefix), with a trailing
+  # "$http_x_forwarded_for" field. Seen on WAF/SSO deployments:
+  #   sso.example.com 10.8.0.42 - - [05/Aug/2026:09:38:46 +0000] "GET / HTTP/1.1" 200 698 "-" "UA" "-"
+  # Kept AFTER the syslog-prefixed patterns (first match wins).
+  # ============================================================
+
+  - name: "nginx_access_vhost"
+
+    prematch: "HTTP/"
+    regex: '^(?P<vhost>[A-Za-z0-9\.\-]+) (?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
+
+    mapping:
+      vhost: "url.domain"
+
+      ip: "source.ip"
+
+      method: "http.request.method"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      path: "url.path"
+      query: "url.query"
+
+      forwarded_for: "nginx.forwarded_for"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+
+
+  - name: "nginx_access_vhost_user"
+
+    prematch: "HTTP/"
+    regex: '^(?P<vhost>[A-Za-z0-9\.\-]+) (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
+
+    mapping:
+      vhost: "url.domain"
+
+      ip: "source.ip"
+      remote_user: "user.name"
+
+      method: "http.request.method"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      path: "url.path"
+      query: "url.query"
+
+      forwarded_for: "nginx.forwarded_for"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+
+
+  # ============================================================
   # CONNECTION REFUSED
   # ============================================================
 
@@ -210,6 +278,52 @@ patterns:
       event.category: "web"
       event.type: "error"
       event.action: "upstream_premature_close"
+      event.outcome: "failure"
+
+
+  # ============================================================
+  # CLIENT BODY TOO LARGE (HTTP 413 / client_max_body_size)
+  # ============================================================
+
+  - name: "nginx_client_body_too_large"
+
+    prematch: "too large body"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) client intended to send too large body: (?P<body_size>\d+) bytes, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", host: "(?P<host_header>[^"]+)"(?:, referrer: "(?P<referrer>[^"]+)")?'
+
+    timestamp:
+      group: timestamp
+      format: nginx_error
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+
+      connection: "nginx.connection_id"
+
+      body_size: "http.request.body.bytes|int"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "client_body_too_large"
       event.outcome: "failure"
 
 
