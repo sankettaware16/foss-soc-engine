@@ -94,39 +94,50 @@ class GeoIPClient:
 
     def _lookup_uncached(self, ip_str):
         try:
-            ip_obj = ipaddress.ip_address(ip_str)
-            if ip_obj.is_private or ip_obj.is_loopback:
+            # is_global filters EVERYTHING unroutable in one check: RFC1918,
+            # loopback, link-local, CGNAT (100.64/10), multicast, reserved.
+            # Costs one parse, saves the mmdb lookup for all of them.
+            if not ipaddress.ip_address(ip_str).is_global:
                 return None
 
             response = self._reader.city(ip_str)
 
-            return {
-                "country_name": response.country.name,
-                "country_iso_code": response.country.iso_code,
-                "city_name": response.city.name,
-                "location": {
-                    "lat": response.location.latitude,
-                    "lon": response.location.longitude
-                }
-            }
+            # Sparse output: only what MaxMind actually knows. Anycast/CDN
+            # blocks (e.g. Cloudflare 172.67/16) have a record with NO
+            # location - the old unconditional dict emitted
+            # {"country_name": null, "location": {"lat": null, ...}} junk.
+            geo = {}
+            if response.country.name:
+                geo["country_name"] = response.country.name
+            if response.country.iso_code:
+                geo["country_iso_code"] = response.country.iso_code
+            if response.city.name:
+                geo["city_name"] = response.city.name
+            lat = response.location.latitude
+            lon = response.location.longitude
+            if lat is not None and lon is not None:
+                geo["location"] = {"lat": lat, "lon": lon}
+            return geo or None
         except Exception:
             return None
 
     def _asn_lookup_uncached(self, ip_str):
         try:
-            ip_obj = ipaddress.ip_address(ip_str)
-            if ip_obj.is_private or ip_obj.is_loopback:
+            if not ipaddress.ip_address(ip_str).is_global:
                 return None
 
             response = self._asn_reader.asn(ip_str)
 
             # ECS: source.as.number / source.as.organization.name
-            return {
-                "number": response.autonomous_system_number,
-                "organization": {
+            # Same sparse rule as geo: never emit null-valued fields.
+            asn = {}
+            if response.autonomous_system_number is not None:
+                asn["number"] = response.autonomous_system_number
+            if response.autonomous_system_organization:
+                asn["organization"] = {
                     "name": response.autonomous_system_organization
-                },
-            }
+                }
+            return asn or None
         except Exception:
             return None
 
