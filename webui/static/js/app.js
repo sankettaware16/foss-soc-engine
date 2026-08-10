@@ -13,6 +13,7 @@ const VIEW_META = {
   config: ["Config", "Edit config.yaml and validate it before going live"],
   ecs: ["ECS Helper", "Look up and autocorrect Elastic Common Schema fields"],
   preflight: ["Preflight", "Readiness checks for the live Kafka / Redis pipeline"],
+  benchmark: ["Benchmark", "Capacity, live pipeline lag and historical performance"],
   help: ["How to use", "A quick tour of the console"],
 };
 
@@ -443,6 +444,43 @@ $("#run-preflight").addEventListener("click", async () => {
     toast(d.passed ? "Preflight PASSED" : `Preflight: ${d.errors} error(s)`, d.passed ? "good" : "bad");
   } catch (e) { $("#pf-msg").textContent = ""; toast(e.message, "bad"); }
 });
+
+/* ---------- benchmark ---------- */
+let BENCH_RUNNING = false;
+async function runBench(mode, body, msgSel) {
+  if (BENCH_RUNNING) { toast("A benchmark is already running", "bad"); return; }
+  BENCH_RUNNING = true;
+  $(msgSel).textContent = "running… this can take a while";
+  const out = $("#bm-out");
+  out.classList.add("muted");
+  out.textContent = `running ${mode} benchmark…`;
+  try {
+    const d = await api("/api/benchmark/" + mode, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    out.textContent = d.output || "(no output)";
+    out.classList.remove("muted");
+    toast("Benchmark finished", "good");
+  } catch (e) {
+    out.textContent = "Error: " + e.message;
+    toast(e.message, "bad");
+  }
+  $(msgSel).textContent = "";
+  BENCH_RUNNING = false;
+}
+$("#bm-run-capacity").addEventListener("click", () =>
+  runBench("capacity", { seconds: parseFloat($("#bm-seconds").value) || 1 }, "#bm-cap-msg"));
+$("#bm-run-live").addEventListener("click", () =>
+  runBench("live", { sample: parseInt($("#bm-sample").value, 10) || 500 }, "#bm-live-msg"));
+$("#bm-run-history").addEventListener("click", () =>
+  runBench("history", {
+    index: $("#bm-index").value,
+    days: parseInt($("#bm-days").value, 10) || 3,
+    interval: $("#bm-interval").value,
+    es: $("#bm-es").value,
+    password: $("#bm-pass").value,
+  }, "#bm-hist-msg"));
 
 /* ---------- refresh ---------- */
 $("#refresh-btn").addEventListener("click", () => {

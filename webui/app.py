@@ -849,6 +849,83 @@ def api_preflight():
 
 
 # --------------------------------------------------------------------------- #
+# Benchmark  ·  wraps the REAL benchmark.py (same one as the CLI), capturing
+# its stdout — the UI and CLI can never diverge. Three modes:
+#   capacity — per-rule EPS + parse latency + live utilization (CPU-heavy for
+#              ~n_rules × seconds; capped)
+#   live     — pipeline lag from the output NDJSON tails (read-only, fast)
+#   history  — lag/EPS timeline computed by Elasticsearch; reuses the ELK
+#              .env credentials the UI already signs in with, so no typing
+# --------------------------------------------------------------------------- #
+_BENCH_INTERVALS = ("15m", "30m", "1h", "3h", "1d")
+
+
+@app.route("/api/benchmark/<mode>", methods=["POST"])
+def api_benchmark(mode):
+    try:
+        import benchmark as bm
+    except Exception as e:
+        return jsonify({"error": f"benchmark tool unavailable in this build: {e}"}), 500
+    from types import SimpleNamespace
+
+    body = request.get_json(force=True, silent=True) or {}
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            if mode == "capacity":
+                try:
+                    seconds = float(body.get("seconds", 1.0))
+                except (TypeError, ValueError):
+                    seconds = 1.0
+                seconds = min(5.0, max(0.2, seconds))
+                args = SimpleNamespace(seconds=seconds,
+                                       rule=(body.get("rule") or "").strip() or None,
+                                       file=None)
+                bm.run_synthetic(args, bm.load_config())
+            elif mode == "live":
+                try:
+                    sample = int(body.get("sample", 500))
+                except (TypeError, ValueError):
+                    sample = 500
+                args = SimpleNamespace(sample=min(5000, max(50, sample)))
+                bm.run_live(args, bm.load_config())
+            elif mode == "history":
+                index = (body.get("index") or "").strip()
+                if not index:
+                    return jsonify({"error": "index pattern is required (e.g. fosstlsoc-logs-squid-*)"}), 400
+                interval = body.get("interval") or "1h"
+                if interval not in _BENCH_INTERVALS:
+                    return jsonify({"error": f"interval must be one of {'/'.join(_BENCH_INTERVALS)}"}), 400
+                password = (body.get("password") or "").strip()
+                user = (body.get("user") or "").strip()
+                if not password:
+                    _, env = _find_elk_env()
+                    if env:
+                        password = env.get("ELASTIC_PASSWORD") or ""
+                        user = user or env.get("ELASTIC_USERNAME") or ""
+                if not password:
+                    return jsonify({"error": "no Elasticsearch password available: none stored "
+                                             "(ELK .env) and none entered in the form"}), 400
+                try:
+                    days = min(30, max(1, int(body.get("days", 3))))
+                except (TypeError, ValueError):
+                    days = 3
+                args = SimpleNamespace(
+                    es=(body.get("es") or "https://localhost:9200").rstrip("/"),
+                    user=user or "elastic", password=password,
+                    index=index, days=days, interval=interval)
+                bm.run_history(args)
+            else:
+                return jsonify({"error": f"unknown benchmark mode: {mode}"}), 404
+    except SystemExit as e:
+        # benchmark.py reports usage/connectivity problems via sys.exit(msg)
+        return jsonify({"error": str(e), "output": buf.getvalue()}), 400
+    except Exception as e:
+        return jsonify({"error": str(e), "output": buf.getvalue()}), 500
+    return jsonify({"mode": mode, "output": buf.getvalue()})
+
+
+# --------------------------------------------------------------------------- #
 # Live monitoring  ·  reads what the running engine (main.py) writes into logs/
 # (engine.pid heartbeat + per-worker stats), plus host CPU/RAM. All optional /
 # dependency-free: psutil is used when present, otherwise /proc (Linux) or

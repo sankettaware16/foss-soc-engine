@@ -107,13 +107,13 @@ Sign out any time with the button in the top-right. For local development only,
 you can disable the login entirely with `SOC_UI_NO_AUTH=1`.
 
 > The login travels over plain HTTP, so use the console on a trusted network
-> (see §11). For wider exposure, put it behind an HTTPS reverse proxy.
+> (see §12). For wider exposure, put it behind an HTTPS reverse proxy.
 
 ---
 
 ## 2. The console at a glance
 
-The left sidebar has six sections:
+The left sidebar sections:
 
 | Section        | What it's for |
 |----------------|---------------|
@@ -124,6 +124,7 @@ The left sidebar has six sections:
 | **Config**     | Edit `config.yaml` and validate it before going live. |
 | **ECS Helper** | Look up the correct field name for anything ("country", "http status"…) or autocorrect a wrong one. |
 | **Preflight**  | When you're ready to connect to the real Kafka/Redis pipeline, run the readiness checks. |
+| **Benchmark**  | Measure what this machine can parse (EPS, latency, utilization %), check the pipeline is real-time, or replay how it handled a past traffic spike. |
 
 The colored dot at the top‑right is the engine status (green = healthy).
 
@@ -297,7 +298,35 @@ down means it's safe to start the engine itself (`python main.py`).
 
 ---
 
-## 9. What works without extra software
+## 9. Benchmark (how fast is my setup, and is it keeping up?)
+
+Click **Benchmark**. Three tools, one page — results appear in the box below
+them:
+
+1. **Capacity** — "how much can this machine parse?" Runs every rule against
+   its sample corpus and reports events/second per rule, parse latency
+   (p50 = the typical event, p95/p99 = the slowest 1‑in‑20 / 1‑in‑100), and —
+   when the engine is running — your **current utilization** as a percentage
+   with a bar ("you use 71 EPS of ~19,000 = 0.4%"). Expect the machine to be
+   busy for ~15–60 seconds while it measures.
+2. **Live lag** — "is the pipeline real‑time *right now*?" Reads the newest
+   events from each module's output file and shows how long ago each event
+   really happened (lag = `event.ingested − @timestamp`). Steady sub‑second
+   numbers are healthy; a **negative** or hours‑sized lag means a *source
+   host's* clock or timezone label is wrong — not the engine.
+3. **History** — "how did it behave last week / during that big onboarding?"
+   Elasticsearch rebuilds the lag + EPS timeline from the events already
+   stored, bucket by bucket, with flags (`lagging`, `BEHIND`, `clock/tz?`).
+   Enter the index pattern (e.g. `fosstlsoc-logs-squid-*`); the password can
+   stay empty — the console reuses the same ELK sign‑in it already has.
+   Large patterns can take a minute.
+
+Same engine code as the CLI (`python3 benchmark.py`, `--live`, `--history`),
+so the numbers in the browser and the terminal always agree.
+
+---
+
+## 10. What works without extra software
 
 The console is built to **never crash on a missing dependency**:
 
@@ -314,7 +343,7 @@ and add Redis/GeoIP/Kafka later only when you actually go live.
 
 ---
 
-## 10. Changing the port or stopping it
+## 11. Changing the port or stopping it
 
 - **Port:** set an environment variable before launching:
   `SOC_UI_PORT=9000`. (Default is `8600`.)
@@ -325,7 +354,7 @@ and add Redis/GeoIP/Kafka later only when you actually go live.
 
 ---
 
-## 11. Run it on an Ubuntu server & open it over the network
+## 12. Run it on an Ubuntu server & open it over the network
 
 By default the console only answers on the machine it runs on (`127.0.0.1`).
 To reach it from other computers, bind it to **all interfaces** with
@@ -408,7 +437,7 @@ reboots, and restarts itself if it crashes.
 
 ---
 
-## 12. Quick troubleshooting
+## 13. Quick troubleshooting
 
 - **Browser didn't open** → manually visit http://127.0.0.1:8600
 - **"Port already in use"** → something is already on 8600; relaunch with

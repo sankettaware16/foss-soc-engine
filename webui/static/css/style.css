@@ -264,6 +264,7 @@ select option { background: #fff; color: var(--txt); }
 
 /* ---------- log/report lists ---------- */
 .loglist { display: flex; flex-direction: column; gap: 4px; font-family: var(--mono); font-size: 12.5px; }
+.bm-pre { margin: 0; padding: 14px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; overflow-x: auto; white-space: pre; }
 .logline { padding: 7px 12px; border-radius: 9px; border-left: 3px solid oklch(0.7 0.02 258); background: var(--glass-soft); color: var(--txt-body); }
 .logline.OK { border-color: var(--good-fill); color: var(--good); }
 .logline.ERROR { border-color: var(--bad); color: var(--bad); }

@@ -55,6 +55,8 @@
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.7 1.8L21.5 17.5 19.7 18.2 19 20l-.7-1.8L16.5 17.5l1.8-.7z"/></svg></span>ECS Helper</button>
         <button class="nav-item" data-view="preflight">
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2.5L11 13"/><path d="M21.5 2.5l-6.5 19-3.8-8.7L2.5 9z"/></svg></span>Preflight</button>
+        <button class="nav-item" data-view="benchmark">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 1 9-9"/><path d="M12 12l5-4"/><path d="M12 3v2"/><path d="M3 12h2"/><path d="M19 12h2"/></svg></span>Benchmark</button>
       </nav>
 
       <div class="side-foot">
@@ -328,6 +330,68 @@
         </div>
       </section>
 
+      <!-- ============ BENCHMARK ============ -->
+      <section class="view" id="view-benchmark">
+        <div class="glass card">
+          <h3 class="card-h">1 · Capacity — what can this machine parse?</h3>
+          <p class="muted small">
+            Runs every rule against its sample corpus on one core: EPS, parse latency
+            (avg/p50/p95/p99) and live utilization vs the running engine.
+            CPU-heavy while it runs (roughly 15–60&nbsp;s).
+          </p>
+          <div class="row gap wrap" style="margin-top:12px">
+            <div class="field"><label>Seconds per rule</label>
+              <select id="bm-seconds"><option value="1" selected>1 (quick)</option><option value="3">3 (steady)</option></select></div>
+            <button id="bm-run-capacity" class="btn primary">Run capacity benchmark</button>
+            <span id="bm-cap-msg" class="muted small"></span>
+          </div>
+        </div>
+
+        <div class="glass card" style="margin-top:16px">
+          <h3 class="card-h">2 · Live lag — is the pipeline real-time right now?</h3>
+          <p class="muted small">
+            Reads the tail of each module's output file: lag = event.ingested − @timestamp.
+            Steady sub-second lag = healthy; negative or hours-sized lag = a source
+            host's clock / timezone label is wrong, not the engine.
+          </p>
+          <div class="row gap wrap" style="margin-top:12px">
+            <div class="field"><label>Events per module</label>
+              <input id="bm-sample" type="number" value="500" min="50" max="5000" style="width:90px" /></div>
+            <button id="bm-run-live" class="btn primary">Check live lag</button>
+            <span id="bm-live-msg" class="muted small"></span>
+          </div>
+        </div>
+
+        <div class="glass card" style="margin-top:16px">
+          <h3 class="card-h">3 · History — how did it perform last week / during a spike?</h3>
+          <p class="muted small">
+            Elasticsearch reconstructs the lag/EPS timeline from the stored events —
+            e.g. how a mass onboarding behaved, hour by hour. Uses the same ELK
+            sign-in this console already has, so the password can stay empty.
+            Large patterns can take a minute.
+          </p>
+          <div class="row gap wrap" style="margin-top:12px">
+            <div class="field"><label>Index pattern</label>
+              <input id="bm-index" type="text" placeholder="fosstlsoc-logs-squid-*" style="width:220px" /></div>
+            <div class="field"><label>Days back</label>
+              <input id="bm-days" type="number" value="3" min="1" max="30" style="width:70px" /></div>
+            <div class="field"><label>Bucket</label>
+              <select id="bm-interval"><option>15m</option><option>30m</option><option selected>1h</option><option>3h</option><option>1d</option></select></div>
+            <div class="field"><label>Elasticsearch URL</label>
+              <input id="bm-es" type="text" value="https://localhost:9200" style="width:200px" /></div>
+            <div class="field"><label>Password (optional)</label>
+              <input id="bm-pass" type="password" placeholder="stored .env used if empty" style="width:170px" /></div>
+            <button id="bm-run-history" class="btn primary">Run history</button>
+            <span id="bm-hist-msg" class="muted small"></span>
+          </div>
+        </div>
+
+        <div class="glass card" style="margin-top:16px">
+          <h3 class="card-h">Result</h3>
+          <pre id="bm-out" class="bm-pre muted">Run a benchmark above — the report appears here.</pre>
+        </div>
+      </section>
+
       <!-- ============ HELP ============ -->
       <section class="view" id="view-help">
         <div class="glass card help-card">
@@ -338,6 +402,7 @@
             <li><b>Config</b> — edit <code>config.yaml</code> and <b>Validate</b> it (same checks as the CLI validator) before going live.</li>
             <li><b>ECS Helper</b> — look up the correct ECS field for any concept, or autocorrect a wrong name.</li>
             <li><b>Preflight</b> — when you are ready to connect Kafka/Redis, run the live readiness check.</li>
+            <li><b>Benchmark</b> — measure what this machine can parse (EPS + latency + utilization&nbsp;%), check whether the live pipeline is real-time, or reconstruct how it performed during a past traffic spike.</li>
           </ol>
           <p class="muted small">Full written guide: <code>WEB_UI_GUIDE.md</code> in the application folder.</p>
         </div>
