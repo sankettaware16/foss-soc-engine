@@ -18,7 +18,7 @@ patterns:
   - name: "nginx_access"
 
     prematch: "HTTP/"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))?\s+HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
 
     mapping:
       syslog_timestamp: "event.created"
@@ -51,7 +51,7 @@ patterns:
   - name: "nginx_access_user"
 
     prematch: "HTTP/"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))?\s+HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"'
 
     mapping:
       syslog_timestamp: "event.created"
@@ -90,7 +90,7 @@ patterns:
   - name: "nginx_access_vhost"
 
     prematch: "HTTP/"
-    regex: '^(?P<vhost>[A-Za-z0-9\.\-]+) (?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
+    regex: '^(?P<vhost>[A-Za-z0-9\.\-]+) (?P<ip>[\d\.]+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))?\s+HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
 
     mapping:
       vhost: "url.domain"
@@ -119,7 +119,7 @@ patterns:
   - name: "nginx_access_vhost_user"
 
     prematch: "HTTP/"
-    regex: '^(?P<vhost>[A-Za-z0-9\.\-]+) (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
+    regex: '^(?P<vhost>[A-Za-z0-9\.\-]+) (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))?\s+HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
 
     mapping:
       vhost: "url.domain"
@@ -471,7 +471,7 @@ patterns:
   - name: "nginx_message_repeated"
 
     prematch: "message repeated"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))? HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"\]'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<ip>[\d\.]+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))?\s+HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"\]'
 
     mapping:
       syslog_timestamp: "event.created"

@@ -39,6 +39,42 @@ patterns:
       event.kind: "event"
       event.outcome: "success"
 
+  # CONNECT by hostname (non-transparent path): destination is a name, and
+  # the hierarchy can be HIER_DIRECT as well as ORIGINAL_DST. The ambiguous
+  # destination goes to destination.address; the engine classifies it into
+  # .ip or .domain. Kept AFTER tcp_connect_tunnel so transparent IP tunnels
+  # keep their exact shape.
+  - name: "tcp_connect_tunnel_host"
+    prematch: "TCP_TUNNEL"
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_TUNNEL(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>CONNECT)\s+(?P<dst>[A-Za-z0-9.\-]+):(?P<dst_port>\d+)\s+-\s+(?:ORIGINAL_DST|HIER_DIRECT)/(?P<orig_dst>\S+)\s+-$'
+    mapping:
+      host: "host.name"
+      proc_name: "process.name"
+      pid: "process.pid|int"
+      duration: "event.duration|int"
+      src_ip: "source.ip"
+      src_port: "source.port|int"
+      proxy_ip: "observer.ip"
+      proxy_port: "observer.ingress.interface.id"
+      action: "event.action"
+      status: "http.response.status_code|int"
+      bytes: "source.bytes|int"
+      method: "http.request.method"
+      dst: "destination.address"
+      dst_port: "destination.port|int"
+      orig_dst: "squid.original_destination"
+    static:
+      observer.vendor: "Squid"
+      observer.product: "Squid Proxy"
+      observer.type: "proxy"
+      service.type: "proxy"
+      network.protocol: "tls"
+      network.transport: "tcp"
+      event.category: "network"
+      event.type: "connection"
+      event.kind: "event"
+      event.outcome: "success"
+
   - name: "http_request_ipv6_dst"
     prematch: "TCP_"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<dst_ip>[0-9a-fA-F:]+):(?P<dst_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?P<url>\S+)\s+-\s+(?:ORIGINAL_DST|HIER_DIRECT)/(?P<orig_dst>\S+)\s+(?P<content_type>\S+)$'
@@ -189,6 +225,37 @@ patterns:
       event.outcome: "failure"
       event.action_detail: "access_denied"
 
+  # Responses squid serves ITSELF (cache icons, internal pages): client-only
+  # endpoint (-:-), any TCP_* action, HIER_NONE hierarchy. Kept AFTER the
+  # TCP_DENIED patterns so denials keep their specific outcome/action_detail.
+  - name: "tcp_local_response"
+    prematch: "HIER_NONE"
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>[A-Z]+)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    mapping:
+      host: "host.name"
+      proc_name: "process.name"
+      pid: "process.pid|int"
+      duration: "event.duration|int"
+      src_ip: "source.ip"
+      src_port: "source.port|int"
+      action: "event.action"
+      status: "http.response.status_code|int"
+      bytes: "source.bytes|int"
+      method: "http.request.method"
+      url: "url.original"
+      content_type: "http.response.mime_type"
+    static:
+      observer.vendor: "Squid"
+      observer.product: "Squid Proxy"
+      observer.type: "proxy"
+      service.type: "proxy"
+      network.transport: "tcp"
+      event.category: "web"
+      event.type: "access"
+      event.kind: "event"
+      event.outcome: "success"
+      event.action_detail: "served_by_proxy"
+
   - name: "none_http_fail"
     prematch: "HIER_NONE"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
@@ -303,7 +370,7 @@ patterns:
 
   - name: "none_error_request"
     prematch: "error:"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+NONE\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+\S+\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: "host.name"
       proc_name: "process.name"
@@ -330,7 +397,7 @@ patterns:
 
   - name: "none_error"
     prematch: "error:"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+NONE\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+-$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+\S+\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+-$'
     mapping:
       host: "host.name"
       proc_name: "process.name"
