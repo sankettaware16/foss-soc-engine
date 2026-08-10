@@ -413,6 +413,7 @@ Produce a YAML file with these keys:
 - the strategy-specific keys (below)
 - timestamp: where the event's REAL time lives in the log and how to parse it
   (see TIMESTAMP RULES). Include it whenever the log carries a time — almost always.
+- vars: (optional) site-tunable values used inside regexes (see VARS RULES)
 - mapping: maps each captured value to an ECS field (see ECS RULES)
 - static: (optional) fixed ECS fields added to every event
 
@@ -420,11 +421,18 @@ Choose the strategy by the shape of the logs:
 - stateless  : single-line, one consistent format. Keys: regex, mapping, static.
 - multi_match: one source with several line formats. Keys: patterns: a list of
                {name, prematch, regex, mapping, static}. Order matters; first
-               match wins.
+               match wins — put SPECIFIC patterns first and any generic
+               catch-all LAST, or the catch-all swallows everything.
 - stateful   : one event spread over multiple lines sharing a transaction id.
                Keys: id_regex (MUST contain a named group `id`), end_signal
                (a substring that marks the final line), patterns: list of
-               {prematch, regex, mapping, static}.
+               {prematch, regex, mapping, static}. Optional state_ttl_sec
+               (default 300): raise it for sources whose transactions
+               legitimately run long (deferred mail, slow scans) — expired
+               transactions are still emitted, tagged event.incomplete: true.
+               Lines WITHOUT the id fall back to the first matching pattern as
+               standalone events, so also cover the source's warning/error
+               lines that carry no transaction id.
 - json_map   : logs are JSON. mapping keys are dot-paths into the JSON; use `*`
                to walk every element of a list (e.g. items.*.id). Keys: mapping, static.
 - xml_xpath  : logs are XML. Keys: items_xpath (element repeated per event),
@@ -433,6 +441,10 @@ Choose the strategy by the shape of the logs:
 # REGEX RULES
 - Use Python `re` syntax with NAMED groups: (?P<name>...).
 - Make patterns specific; escape literals; prefer [^"]* / \S+ over greedy .*.
+- ROBUSTNESS: real logs are messier than the samples. Use \s+ between tokens
+  instead of a single literal space wherever the producer might vary (URLs with
+  trailing spaces produce double spaces; columns are often width-padded). Make
+  trailing optional fields genuinely optional with (?: ...)?.
 - The group name (left side of mapping) is arbitrary; the ECS field (right side)
   must be valid ECS.
 - PERFORMANCE: give every multi_match/stateful pattern a `prematch:` — a plain
@@ -440,6 +452,20 @@ Choose the strategy by the shape of the logs:
   regex matches (e.g. prematch: "Failed password"). The engine checks it with
   a cheap `in` before running the regex; this is what keeps rules with many
   patterns fast. A list means any-of: prematch: ["timeout", "timed out"].
+  A top-level prematch: (next to strategy:) gates the WHOLE rule the same way.
+
+# VARS RULES (optional — site-tunable values)
+Values an operator must edit per site (internal domains, subnets, hostnames)
+go in a top-level `vars:` block and are referenced inside regexes as %{name}.
+Two behaviors, choose deliberately:
+- LIST value  -> each entry is regex-ESCAPED and joined into (?:a\.com|b\.org):
+  operators write plain literals, no regex knowledge needed.
+    vars: { internal_domains: ["example.com", "example.org"] }
+- STRING value -> inserted as a RAW regex fragment (single-quote it in YAML so
+  backslashes survive). Use this when the value needs regex power, e.g. to
+  match a domain AND all its subdomains:
+    vars: { internal_domains: '(?:[\w-]+\.)*example\.com' }
+Put a loud "EDIT THIS for your site" comment above the block.
 
 # TIMESTAMP RULES (critical — this drives Elasticsearch index routing)
 The engine fills @timestamp from the `timestamp:` block. Without it, events are
@@ -473,9 +499,18 @@ known, omit tz (the engine assumes UTC and tags the event log_assumed_utc).
 Every value on the RIGHT side of mapping, and every key under static, MUST be a
 valid Elastic Common Schema (ECS) field. Add `|int` or `|float` to the ECS field
 to coerce numbers, e.g. "http.response.status_code|int".
+AMBIGUOUS ENDPOINTS: if a captured endpoint is sometimes an IP and sometimes a
+hostname (proxy destinations, relay targets), map it to source.address or
+destination.address — the engine classifies it into .ip or .domain per event
+automatically (and geo/ASN-enriches IPs on BOTH the source and destination
+side). Never force such a value into .ip or .domain yourself.
+ORIGINAL TIME: alongside the timestamp block, also map the captured raw time
+string to "event.original_time" — it is kept verbatim for audit/debugging.
 Use these common ECS fields where they fit:
-  source.ip, source.port, source.domain, destination.ip, destination.port,
-  host.name, user.name, user_agent.original,
+  source.ip, source.port, source.domain, source.address, source.bytes,
+  destination.ip, destination.port, destination.domain, destination.address,
+  host.name, user.name, user_agent.original, authentication.method,
+  network.bytes, event.duration,
   http.request.method, http.response.status_code, http.request.referrer,
   http.response.body.bytes, url.path, url.query, url.domain,
   event.action, event.category, event.type, event.kind, event.outcome,
@@ -505,5 +540,11 @@ Here are my RAW LOG SAMPLES:
 <<< PASTE 5–20 RAW LOG LINES HERE >>>
 ````
 
-That's the whole workflow: paste prompt + logs → get YAML → save it in `rules/` →
-`python3 ecs_helper.py check` → add the `program_mapping` line → restart. Done.
+That's the whole workflow: paste prompt + logs → get YAML → save it in `rules/`
+(or paste it into the Web UI's **Rules** editor) → `python3 ecs_helper.py check`
+→ add the `program_mapping` line → the running engine hot-reloads the rule
+within ~10 seconds, no restart needed. Done.
+
+Where to get the raw samples: the engine's dead-letter queue is your to-do
+list — `logs/dlq/<source>.json` holds exactly the lines no pattern matched,
+with the raw line embedded. Paste those into the prompt and the gap closes.
