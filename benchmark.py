@@ -27,6 +27,18 @@ Two questions, two modes:
 
        python3 benchmark.py --live
        python3 benchmark.py --live --sample 2000
+
+3. "How did the pipeline perform LAST week / during that big onboarding?"
+   (--history)  Every indexed event stores both @timestamp and
+   event.ingested, so Elasticsearch can reconstruct the lag timeline
+   after the fact: per time bucket, event rate (EPS) and lag avg/p95/max.
+   A mass onboarding that briefly outran the pipeline shows up as a lag
+   hump that then recovers; a real bottleneck shows lag growing and
+   never recovering.
+
+       python3 benchmark.py --history --index "fosstlsoc-logs-squid-*" \
+           --es https://localhost:9200 --user elastic --days 4
+       (password: --password, env ES_PASSWORD, or interactive prompt)
 """
 import argparse
 import fnmatch
@@ -390,14 +402,124 @@ def run_live(args, config):
     print("  offset-sized lag (~hours) = fix the SOURCE host clock, not the engine.")
 
 
+# --------------------------------------------------------------------------- #
+# Mode 3: historical lag timeline straight from Elasticsearch
+# --------------------------------------------------------------------------- #
+
+_LAG_SCRIPT = ("(doc['event.ingested'].value.toInstant().toEpochMilli() - "
+               "doc['@timestamp'].value.toInstant().toEpochMilli()) / 1000.0")
+
+_INTERVAL_SECONDS = {"m": 60, "h": 3600, "d": 86400}
+
+
+def _interval_secs(interval):
+    try:
+        return int(interval[:-1]) * _INTERVAL_SECONDS[interval[-1]]
+    except (KeyError, ValueError, IndexError):
+        sys.exit(f"--interval must look like 30m / 1h / 1d, got: {interval}")
+
+
+def run_history(args):
+    import ssl
+    import base64
+    import getpass
+    import urllib.request
+    import urllib.error
+
+    password = args.password or os.environ.get("ES_PASSWORD") \
+        or getpass.getpass(f"password for {args.user}: ")
+    auth = base64.b64encode(f"{args.user}:{password}".encode()).decode()
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    body = {
+        "size": 0,
+        "query": {"bool": {"filter": [
+            {"range": {"@timestamp": {"gte": f"now-{args.days}d"}}},
+            {"exists": {"field": "event.ingested"}},
+        ]}},
+        "aggs": {"timeline": {
+            "date_histogram": {"field": "@timestamp",
+                               "fixed_interval": args.interval,
+                               "min_doc_count": 1},
+            "aggs": {
+                "lag_avg": {"avg": {"script": {"source": _LAG_SCRIPT}}},
+                "lag_pct": {"percentiles": {"script": {"source": _LAG_SCRIPT},
+                                            "percents": [95]}},
+                "lag_max": {"max": {"script": {"source": _LAG_SCRIPT}}},
+            },
+        }},
+    }
+    url = f"{args.es}/{args.index}/_search"
+    req = urllib.request.Request(
+        url, method="POST", data=json.dumps(body).encode(),
+        headers={"Authorization": "Basic " + auth,
+                 "Content-Type": "application/json"})
+    try:
+        resp = json.load(urllib.request.urlopen(req, context=ctx, timeout=180))
+    except urllib.error.HTTPError as e:
+        sys.exit(f"Elasticsearch error {e.code}: {e.read().decode()[:400]}")
+    except Exception as e:
+        sys.exit(f"Cannot reach {url}: {e}")
+
+    buckets = resp.get("aggregations", {}).get("timeline", {}).get("buckets", [])
+    took_note = f"(query took {resp.get('took', 0)/1000.0:.1f}s over the cluster)"
+    secs = _interval_secs(args.interval)
+
+    print("=" * 76)
+    print(f"  Pipeline lag HISTORY  —  {args.index}, last {args.days}d, "
+          f"{args.interval} buckets  {took_note}")
+    print("=" * 76)
+    print("  Lag = event.ingested − @timestamp per event, aggregated per bucket.")
+    print("  A hump that recovers = pipeline caught up; steadily growing lag =")
+    print("  real bottleneck; negative = source clock/timezone label wrong.")
+    print("  Bucket times are UTC.")
+    print()
+    print(f"  {'BUCKET (UTC)':<18}{'events':>12}{'EPS':>9}{'lag avg':>10}"
+          f"{'p95':>9}{'max':>10}   flag")
+    print("  " + "-" * 72)
+    for b in buckets:
+        n = b["doc_count"]
+        eps = n / secs
+        avg = b["lag_avg"]["value"] or 0.0
+        p95 = b["lag_pct"]["values"].get("95.0") or 0.0
+        mx = b["lag_max"]["value"] or 0.0
+        flag = ""
+        if avg < -2:
+            flag = "clock/tz?"
+        elif p95 > 300:
+            flag = "BEHIND"
+        elif p95 > 30:
+            flag = "lagging"
+        key = b.get("key_as_string", "")[:16].replace("T", " ")
+        print(f"  {key:<18}{n:>12,}{eps:>9,.1f}{avg:>9.1f}s{p95:>8.1f}s"
+              f"{mx:>9.1f}s   {flag}")
+    if not buckets:
+        print("  (no documents matched — check --index pattern and --days)")
+
+
 def main():
-    ap = argparse.ArgumentParser(description="Benchmark this deployment: per-rule EPS + parse latency, or live pipeline lag.")
+    ap = argparse.ArgumentParser(description="Benchmark this deployment: per-rule EPS + parse latency, live pipeline lag, or historical lag timeline.")
     ap.add_argument("--seconds", type=float, default=1.0, help="measure window per rule (default 1.0)")
     ap.add_argument("--rule", help="bench only this pattern_name")
     ap.add_argument("--file", help="custom corpus file (raw log lines) for --rule")
     ap.add_argument("--live", action="store_true", help="report pipeline lag from output NDJSON instead")
     ap.add_argument("--sample", type=int, default=500, help="--live: events per module to sample (default 500)")
+    ap.add_argument("--history", action="store_true", help="lag/EPS timeline from Elasticsearch (needs --index)")
+    ap.add_argument("--es", default="https://localhost:9200", help="--history: Elasticsearch URL (default https://localhost:9200)")
+    ap.add_argument("--user", default="elastic", help="--history: ES username (default elastic)")
+    ap.add_argument("--password", help="--history: ES password (or env ES_PASSWORD, or interactive prompt)")
+    ap.add_argument("--index", help="--history: index pattern, e.g. 'fosstlsoc-logs-squid-*'")
+    ap.add_argument("--days", type=int, default=3, help="--history: how far back (default 3)")
+    ap.add_argument("--interval", default="1h", help="--history: bucket size 30m/1h/1d (default 1h)")
     args = ap.parse_args()
+
+    if args.history:
+        if not args.index:
+            ap.error("--history requires --index (e.g. --index 'fosstlsoc-logs-squid-*')")
+        run_history(args)
+        return
 
     config = load_config()
     if args.live:

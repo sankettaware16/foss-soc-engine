@@ -142,6 +142,14 @@ python3 benchmark.py --rule myrule --file /var/log/mysample.log   # YOUR logs
 
 python3 benchmark.py --live        # the RUNNING pipeline: per-module lag
                                    # (event.ingested − @timestamp) from the output files
+
+python3 benchmark.py --history --index "fosstlsoc-logs-squid-*" \
+    --es https://localhost:9200 --user elastic --days 4 --interval 1h
+                                   # RETROSPECTIVE: lag/EPS timeline computed by
+                                   # Elasticsearch from the stored events — shows how
+                                   # the pipeline behaved during a past traffic spike
+                                   # or mass onboarding (a lag hump that recovers =
+                                   # it caught up; lag that keeps growing = bottleneck)
 ```
 
 The default mode answers "how much can this box parse" (slowest rules float to
