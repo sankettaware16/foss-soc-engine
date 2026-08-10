@@ -10,19 +10,37 @@ Shipped and maintained:
 - Five parsing strategies (`stateless`, `multi_match`, `stateful`, `json_map`,
   `xml_xpath`) with prematch gating and ReDoS linting.
 - ECS-validated output with the two-timestamp model and offline GeoIP/ASN
-  enrichment.
+  enrichment on **both** endpoints (`source.ip` and `destination.ip`), plus
+  automatic classification of ambiguous `.address` values into `.ip`/`.domain`.
 - At-least-once delivery, per-source DLQs, worker-pool scaling, live rule
   reload.
 - Validation toolchain: `preflight.py`, `replicate.py`, `test_*` battery,
   golden-sample CI.
-- Web UI console and native Kibana plugin.
+- Benchmarking (`benchmark.py` + Web UI section): per-rule capacity and parse
+  latency with live utilization %, real-time pipeline-lag check, and a
+  historical lag/EPS timeline reconstructed from Elasticsearch — validated on
+  a production 12-server squid onboarding (~35× traffic step, sub-second lag).
+- Web UI console (with engine control and benchmarking) and native Kibana
+  plugin.
+- Elasticsearch index template pre-defining every engine field, so a first
+  document can never mis-type a field for the whole index.
 
 ## Next Release
 
-- Ecosystem alignment: standardized documentation, community health files, and
-  release tagging (this refactoring).
-- Additional built-in rules with golden-sample coverage.
-- Broader timestamp format coverage as new sources demand it.
+Priorities drawn from production operation:
+
+- **Output-file lifecycle**: shipped logrotate profile (compression that keeps
+  up with high-volume sources) and retention guidance — the output NDJSON is a
+  buffer for the shipper, not an archive.
+- **Template deploy helper**: merge the engine's field mappings into an
+  *existing* higher-priority index template instead of assuming the shipped
+  one wins (composable templates are winner-takes-all).
+- **Per-source timezone overrides**: a `source_host → tz` map for producers
+  whose clocks or zone labels are wrong, instead of per-rule workarounds.
+- Optional `confluent-kafka` (librdkafka) consumer for higher per-core
+  throughput on the Kafka leg.
+- Additional built-in rules with golden-sample coverage; broader timestamp
+  format coverage as new sources demand it.
 
 ## Future
 
@@ -32,6 +50,9 @@ Shipped and maintained:
   with CI-enforced golden samples.
 - Enrichment plug-in points beyond GeoIP/ASN (e.g. local threat-list lookups).
 - Prometheus-format metrics endpoint alongside `stats.json`.
+- Native extensions (Rust) for profiled hot spots if a deployment ever
+  outgrows per-core throughput — the YAML rule format stays the contract; the
+  execution engine behind it is replaceable.
 
 ## Long Term Vision
 
