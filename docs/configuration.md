@@ -110,6 +110,74 @@ Per-rule transaction lifetime is set in the rule itself (`state_ttl_sec`,
 default 300 s); timed-out transactions are emitted with
 `event.incomplete: true`, never dropped.
 
+## Timestamp skew validation (optional; default off)
+
+A live stream cannot contain events meaningfully in the **future** of their
+own ingestion — yet a source host whose clock zone is mislabeled produces
+exactly that: times parsed *confidently* (`timestamp_source: log`) that land
+hours ahead on dashboards. Root cause seen in production: a host stamping
+local wall-clock time labeled `+00:00`; during an incident its error events
+indexed +5:30 in the future and triggered a false second-attack investigation.
+
+```yaml
+timestamp_validation:
+  skew_correction: tag_only   # off (default) | tag_only | correct
+  mode: live                  # live | backfill — backfill DISABLES the gate
+                              #   (replayed old logs are legitimately far from ingest)
+  future_tolerance_sec: 300   # future drift a live stream may legitimately show
+  quantum_sec: 900            # real timezone offsets are :00/:15/:30/:45 multiples
+  jitter_sec: 120             # how close to a quantum multiple counts as "clean"
+```
+
+How the gate decides, after every successful timestamp parse:
+
+1. `delta = parsed − now`. Within `future_tolerance_sec` (or in the past):
+   untouched. Past skew is **never** corrected — it is indistinguishable from
+   legitimate backfill.
+2. Future beyond tolerance, and `delta` sits within `jitter_sec` of a clean
+   multiple of `quantum_sec` → a timezone-shaped lie. `correct` subtracts the
+   multiple (preserving true event ordering) and tags
+   `timestamp_source: log_skew_corrected`, keeping the pre-correction value
+   in `event.timestamp_raw`; `tag_only` leaves `@timestamp` alone and tags
+   `log_future_flagged`. Either way `event.timestamp_skew_seconds` records
+   the offset. The quantum test doubles as the safety check: a randomly
+   wrong clock will not land on a clean multiple, so garbage is never
+   "corrected" into a plausible lie —
+3. — instead, a far-future non-quantized time falls back to ingest time
+   (`ingest_fallback`, `event.timestamp_reject_reason: future_nonquantized`)
+   under `correct`, or is tagged under `tag_only`.
+
+**Rollout:** run `tag_only` for a day or two; one aggregation on
+`event.timestamp_source: log_future_flagged` (group by `host.name`) inventories
+every lying source with zero risk; then switch to `correct`.
+
+### Dual-timestamp arbitration (`alt:` — per rule, works even with the gate off)
+
+Most shipped lines carry **two** times (shipper prefix + body time). A rule
+may declare both; the engine parses both, records any disagreement beyond
+`jitter_sec` in `event.timestamp_skew_seconds`, and lets the alternate win
+(`timestamp_source: log_alt_selected`) only when the primary is
+future-implausible while the alternate is not — the clock lie confesses on
+every line, independent of pipeline lag:
+
+```yaml
+timestamp:
+  group: timestamp          # primary: e.g. the body time
+  format: nginx_error
+  tz: "+05:30"
+  alt:                      # secondary: e.g. the rsyslog prefix
+    regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\S+)'
+    format: iso8601
+```
+
+### Zoneless-format lint
+
+Formats that carry no zone (`nginx_error`, `asctime`, `rfc3164`, `suricata`)
+silently assume UTC. At rule load, the engine now **warns** when such a format
+has no `tz:`. Declare the source's real offset (`tz: "+05:30"`), an IANA zone
+(`tz: "Asia/Kolkata"`, DST-aware), or acknowledge deliberately with
+`tz: "assume_utc"`. Ambiguous abbreviations (`IST`, `EST`, …) remain refused.
+
 ## Web UI authentication
 
 There is **no built-in `admin/admin`** — the console is secure by default.

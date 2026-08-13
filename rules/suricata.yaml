@@ -10,6 +10,7 @@ prematch: "[**]"
 timestamp:
   group: timestamp
   format: suricata
+  tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
 
 
 regex: '(?P<timestamp>\d{2}/\d{2}/\d{4}-\d{2}:\d{2}:\d{2}\.\d+)\s+\[\*\*\]\s+\[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\]\s+(?P<signature>[^\[]+)\s+\[\*\*\]\s+\[Classification:\s+(?P<class>[^\]]+)\]\s+\[Priority:\s+(?P<priority>\d+)\]\s+\{(?P<proto>\w+)\}\s+(?P<src_ip>[\d\.]+):(?P<src_port>\d+)\s+->\s+(?P<dst_ip>[\d\.]+):(?P<dst_port>\d+)'

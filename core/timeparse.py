@@ -69,12 +69,19 @@ _ROUNDCUBE_RE = re.compile(
 
 def parse_offset(tz_str):
     """'Z'/'UTC'/'GMT' -> utc; '+0530'/'+05:30'/'+05:45' -> fixed offset;
-    ambiguous abbreviations (IST, EST, ...) -> None (never guessed)."""
+    IANA zone IDs ('Asia/Kolkata') -> zoneinfo (DST-correct, for rule-declared
+    tz:); ambiguous abbreviations (IST, EST, ...) -> None (never guessed)."""
     if not tz_str:
         return None
     s = tz_str.strip()
     if s.lower() in _UTC_NAMES:
         return timezone.utc
+    if '/' in s:
+        try:
+            from zoneinfo import ZoneInfo
+            return ZoneInfo(s)
+        except Exception:
+            return None
     m = _OFFSET_RE.fullmatch(s)
     if not m:
         return None

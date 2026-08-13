@@ -8,6 +8,7 @@ strategy: "json_map"
 timestamp:
   field: transaction.time_stamp
   format: asctime
+  tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
 
 mapping:
   # Transaction core

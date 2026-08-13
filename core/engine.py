@@ -44,6 +44,57 @@ def configure_redis(cfg):
     except Exception as e:
         logger.error(f"Invalid redis: config, keeping previous client: {e}")
 
+
+# --------------------------------------------------------------------------- #
+# Timestamp skew validation (config.yaml `timestamp_validation:` block).
+#
+# A live stream cannot contain events meaningfully in the FUTURE of their own
+# ingestion — yet a source host whose clock zone is mislabeled produces
+# exactly that, confidently parsed and tagged timestamp_source: log (seen in
+# production: an incident's error events landed +5:30 ahead and triggered a
+# false second-attack investigation). The gate below validates every parsed
+# time against the one clock the engine always trusts: its own.
+#
+# Defaults keep the gate OFF: output is byte-identical to previous releases
+# until an operator enables it. Past-ward skew is NEVER touched — it is
+# indistinguishable from legitimate backfill.
+# --------------------------------------------------------------------------- #
+_SKEW = {
+    "enabled": False,          # true iff skew_correction != off AND mode == live
+    "correct": False,          # skew_correction == correct (vs tag_only)
+    "future_tolerance": 300.0,  # seconds of future drift a live stream may show
+    "quantum": 900.0,          # real timezone offsets are :00/:15/:30/:45 multiples
+    "jitter": 120.0,           # how close to a quantum multiple counts as "clean"
+    "mode": "live",            # backfill = replayed old logs, gate must stay out
+}
+
+
+def configure_timestamp_validation(cfg):
+    """Apply config.yaml's optional `timestamp_validation:` block. Missing or
+    malformed block keeps the defaults (gate off, zero behavior change)."""
+    if not isinstance(cfg, dict) or not cfg:
+        return
+    try:
+        correction = str(cfg.get("skew_correction", "off")).lower()
+        _SKEW["correct"] = correction == "correct"
+        _SKEW["mode"] = str(cfg.get("mode", "live")).lower()
+        _SKEW["future_tolerance"] = float(cfg.get("future_tolerance_sec", 300))
+        _SKEW["quantum"] = max(1.0, float(cfg.get("quantum_sec", 900)))
+        _SKEW["jitter"] = float(cfg.get("jitter_sec", 120))
+        _SKEW["enabled"] = (correction in ("tag_only", "correct")
+                            and _SKEW["mode"] == "live")
+        if correction not in ("off", "tag_only", "correct"):
+            logger.error(f"timestamp_validation.skew_correction must be "
+                         f"off/tag_only/correct, got '{correction}' - gate stays off")
+    except (TypeError, ValueError) as e:
+        logger.error(f"Invalid timestamp_validation config, keeping defaults: {e}")
+
+
+# Formats whose values carry NO timezone (core/timeparse.py assumes UTC and
+# tags log_assumed_utc). Rules using them should declare tz: explicitly, or
+# acknowledge the assumption with tz: "assume_utc" (see the rule-load lint).
+_ZONELESS_FORMATS = {"rfc3164", "nginx_error", "asctime", "suricata"}
+
 # The ECS release core/ecs_schema.py's field set is curated from. Stamped on
 # every event as ecs.version so Kibana/consumers know the schema contract.
 ECS_VERSION = "8.11.0"
@@ -618,7 +669,8 @@ class UniversalEngine:
         return base_event
 
     def _compile_ts_spec(self, spec):
-        """Pre-compile a rule/pattern `timestamp:` declaration."""
+        """Pre-compile a rule/pattern `timestamp:` declaration (and its
+        optional nested `alt:` secondary declaration, compiled the same way)."""
         if not isinstance(spec, dict):
             return None
         out = dict(spec)
@@ -630,6 +682,26 @@ class UniversalEngine:
                 logger.error(
                     f"Invalid timestamp regex in rule "
                     f"'{self.config.get('pattern_name', 'unknown')}': {e}")
+        # tz normalization: "assume_utc" is an explicit acknowledgment that a
+        # zoneless format really is UTC — same parse behavior as no tz, but it
+        # silences the lint below.
+        tz = spec.get('tz')
+        out['_tz'] = None if tz in (None, 'assume_utc') else tz
+        # Rule-load lint: a zoneless format with no declared tz silently
+        # assumes UTC on every event — correct only when the source host logs
+        # UTC. Surface that assumption at load instead of at incident time.
+        fmt = spec.get('format', 'iso8601')
+        if fmt in _ZONELESS_FORMATS and tz is None:
+            logger.warning(
+                f"rule '{self.config.get('pattern_name', 'unknown')}': timestamp "
+                f"format '{fmt}' carries no timezone and no tz: is declared — "
+                f"events will be tagged log_assumed_utc. Declare the source's "
+                f"offset (tz: \"+05:30\") or acknowledge with tz: \"assume_utc\".")
+        # Optional secondary timestamp (dual-timestamp arbitration): most
+        # shipped lines carry two times (shipper prefix + body time). When a
+        # rule declares both, the engine can catch one of them lying.
+        alt = spec.get('alt')
+        out['_alt'] = self._compile_ts_spec(alt) if isinstance(alt, dict) else None
         return out
 
     def _xml_find_text(self, item, path):
@@ -642,14 +714,9 @@ class UniversalEngine:
             return child.text.strip()
         return None
 
-    def _apply_timestamp(self, event, spec, groups=None, raw=None,
-                         data=None, item=None):
-        """Extract the declared event time and swap it into @timestamp.
-        On any failure the provisional ingest time (already in @timestamp)
-        stays, with event.timestamp_source = 'ingest_fallback' — the fallback
-        is explicit and countable, never silent."""
-        if not spec:
-            return
+    def _extract_ts_value(self, spec, groups, raw, data, item):
+        """Locate the raw timestamp value a `timestamp:` spec points at:
+        a named regex group, a JSON/XML field path, or a standalone regex."""
         val = None
         grp = spec.get('group')
         if grp and groups:
@@ -665,13 +732,114 @@ class UniversalEngine:
                 gd = m.groupdict()
                 val = gd.get('ts') if 'ts' in gd else (
                     m.group(1) if m.groups() else m.group(0))
+        return val
+
+    def _apply_timestamp(self, event, spec, groups=None, raw=None,
+                         data=None, item=None):
+        """Extract the declared event time and swap it into @timestamp.
+        On any failure the provisional ingest time (already in @timestamp)
+        stays, with event.timestamp_source = 'ingest_fallback' — the fallback
+        is explicit and countable, never silent.
+
+        Two optional validation layers run AFTER a successful parse:
+        - `alt:` arbitration (rule opt-in): a second declared timestamp is
+          parsed too; if the primary is future-implausible while the alternate
+          is live-plausible, the alternate wins (log_alt_selected) and any
+          disagreement beyond jitter is recorded as timestamp_skew_seconds.
+        - the future-skew gate (config opt-in, see _skew_gate)."""
+        if not spec:
+            return
+        val = self._extract_ts_value(spec, groups, raw, data, item)
         if val is None:
             return
         iso, source = parse_timestamp(
-            val, spec.get('format', 'iso8601'), spec.get('tz'))
-        if iso is not None:
-            event['@timestamp'] = iso
-            event.setdefault('event', {})['timestamp_source'] = source
+            val, spec.get('format', 'iso8601'), spec.get('_tz', spec.get('tz')))
+        if iso is None:
+            return
+        if spec.get('_alt') is not None:
+            iso, source = self._arbitrate_alt(
+                event, iso, source, spec['_alt'], groups, raw, data, item)
+        event['@timestamp'] = iso
+        event.setdefault('event', {})['timestamp_source'] = source
+        if _SKEW['enabled']:
+            self._skew_gate(event)
+
+    def _arbitrate_alt(self, event, iso, source, alt_spec,
+                       groups, raw, data, item):
+        """Dual-timestamp arbitration. The primary keeps priority; the
+        alternate wins only with strong evidence: the primary claims to be
+        in the future of ingestion (impossible on a live stream) while the
+        alternate does not. Disagreement beyond jitter is always recorded —
+        a clock lie confesses on every line, independent of pipeline lag."""
+        alt_val = self._extract_ts_value(alt_spec, groups, raw, data, item)
+        if alt_val is None:
+            return iso, source
+        alt_iso, _ = parse_timestamp(
+            alt_val, alt_spec.get('format', 'iso8601'), alt_spec.get('_tz'))
+        if alt_iso is None:
+            return iso, source
+        try:
+            p = datetime.fromisoformat(iso).timestamp()
+            a = datetime.fromisoformat(alt_iso).timestamp()
+        except (ValueError, TypeError):
+            return iso, source
+        diff = p - a
+        if abs(diff) > _SKEW['jitter']:
+            event.setdefault('event', {})['timestamp_skew_seconds'] = \
+                int(round(diff))
+        if _SKEW['mode'] == 'live':
+            now = time.time()
+            if ((p - now) > _SKEW['future_tolerance']
+                    and (a - now) <= _SKEW['future_tolerance']):
+                event.setdefault('event', {})['timestamp_raw'] = iso
+                return alt_iso, 'log_alt_selected'
+        return iso, source
+
+    def _skew_gate(self, event):
+        """Post-parse future-skew gate (config.yaml `timestamp_validation:`).
+
+        A live stream cannot contain events meaningfully in the future of
+        their own ingestion. When the future delta sits on a clean timezone
+        quantum (:00/:15/:30/:45 multiples), the clock is telling a
+        timezone-shaped lie -> subtract the quantum (mode: correct) or tag it
+        (mode: tag_only). The quantum test doubles as the safety check: a
+        randomly wrong clock will not land within jitter of a clean multiple,
+        so garbage falls through to the existing ingest fallback instead of
+        being "corrected" into a plausible lie. Correction (not clamping)
+        preserves true event ordering relative to ingestion.
+
+        Past-ward deltas are never touched here: indistinguishable from
+        legitimate backfill."""
+        ev = event.get('event') or {}
+        if ev.get('timestamp_source') not in (
+                'log', 'log_assumed_utc', 'log_alt_selected'):
+            return
+        try:
+            parsed = datetime.fromisoformat(event['@timestamp']).timestamp()
+        except (KeyError, ValueError, TypeError):
+            return
+        delta = parsed - time.time()
+        if delta <= _SKEW['future_tolerance']:
+            return
+        quantum = _SKEW['quantum']
+        q = round(delta / quantum) * quantum
+        if q != 0 and abs(delta - q) <= _SKEW['jitter']:
+            ev['timestamp_skew_seconds'] = int(q)
+            if _SKEW['correct']:
+                ev['timestamp_raw'] = event['@timestamp']
+                event['@timestamp'] = datetime.fromtimestamp(
+                    parsed - q, timezone.utc).isoformat()
+                ev['timestamp_source'] = 'log_skew_corrected'
+            else:
+                ev['timestamp_source'] = 'log_future_flagged'
+        else:
+            ev['timestamp_reject_reason'] = 'future_nonquantized'
+            if _SKEW['correct']:
+                ev['timestamp_raw'] = event['@timestamp']
+                event['@timestamp'] = ev.get('ingested') or _now_iso()
+                ev['timestamp_source'] = 'ingest_fallback'
+            else:
+                ev['timestamp_source'] = 'log_future_flagged'
 
     def _map_fields(self, event, data, mapping):
         for k, v in data.items():

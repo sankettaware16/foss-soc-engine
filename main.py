@@ -331,8 +331,11 @@ def run_worker(worker_id, workers, config):
 
     # Point the stateful strategy at the configured Redis (config.yaml
     # `redis:` block); defaults to localhost:6379 when the block is absent.
-    from core.engine import configure_redis
+    from core.engine import configure_redis, configure_timestamp_validation
     configure_redis(config.get("redis"))
+    # Optional timestamp skew gate (config.yaml `timestamp_validation:`);
+    # absent block = gate off = output identical to previous releases.
+    configure_timestamp_validation(config.get("timestamp_validation"))
 
     out_cfg = config.get("output", {}) or {}
     writer = OutputWriter(

@@ -120,6 +120,27 @@ redis:
   db: 0
   # password: "your-redis-password"   # uncomment if Redis requires AUTH
 
+# ---------------------------------------------------------------------------
+# Timestamp skew validation (optional; DEFAULT OFF = behavior unchanged).
+# A live stream cannot contain events meaningfully in the FUTURE of their own
+# ingestion — but a source host with a mislabeled timezone produces exactly
+# that (parsed confidently, tagged timestamp_source: log, landing hours ahead
+# on dashboards). This gate validates every parsed time against the engine's
+# own clock: a future delta on a clean timezone quantum (multiples of
+# quantum_sec) is corrected (or just tagged); anything else far-future falls
+# back to ingest time. Past-ward deltas are never touched (they look like
+# legitimate backfill). Recommended rollout: run tag_only for a day, review
+# events tagged log_future_flagged to inventory lying sources, then switch
+# to correct. See docs/configuration.md.
+# ---------------------------------------------------------------------------
+#timestamp_validation:
+#  skew_correction: tag_only   # off | tag_only | correct
+#  mode: live                  # live | backfill (backfill disables the gate:
+#                              #   replayed old logs are legitimately far from ingest)
+#  future_tolerance_sec: 300   # future drift a live stream may legitimately show
+#  quantum_sec: 900            # real timezone offsets are :00/:15/:30/:45 multiples
+#  jitter_sec: 120             # how close to a quantum multiple counts as "clean"
+
 geoip:
   # One switch for ALL IP enrichment (geo + ASN). false = skip both lookups.
   enabled: true

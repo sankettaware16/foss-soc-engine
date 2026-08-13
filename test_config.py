@@ -357,12 +357,21 @@ def validate_rules(base_dir, config):
                            f"Rule {pattern_name} {where}: invalid timestamp regex: {e}")
                     errs += 1
             tz = spec.get("tz")
-            if tz is not None and parse_offset(str(tz)) is None:
+            # "assume_utc" is the explicit acknowledgment that a zoneless
+            # format really is UTC (silences the engine's rule-load lint);
+            # IANA zone IDs (Asia/Kolkata) are resolved via zoneinfo.
+            if (tz is not None and tz != "assume_utc"
+                    and parse_offset(str(tz)) is None):
                 report("ERROR",
                        f"Rule {pattern_name} {where}: timestamp tz '{tz}' must be "
-                       "a numeric offset like '+05:30' or UTC/GMT/Z (ambiguous "
+                       "a numeric offset like '+05:30', an IANA zone like "
+                       "'Asia/Kolkata', UTC/GMT/Z, or 'assume_utc' (ambiguous "
                        "abbreviations like IST are refused)")
                 errs += 1
+            # Optional secondary timestamp for dual-timestamp arbitration:
+            # same schema, validated the same way.
+            if spec.get("alt") is not None:
+                errs += check_timestamp(spec.get("alt"), f"{where} alt")
             return errs
 
         errors += check_timestamp(rule.get("timestamp"), "rule-level")

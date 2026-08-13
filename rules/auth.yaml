@@ -8,6 +8,7 @@ strategy: "multi_match"
 timestamp:
   regex: '^(?P<ts>[A-Za-z]{3}\s+\d{1,2}\s+\d{1,2}:\d{2}:\d{2})'
   format: rfc3164
+  tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
 
 patterns:
 

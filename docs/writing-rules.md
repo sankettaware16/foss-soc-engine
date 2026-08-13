@@ -262,13 +262,27 @@ Good to know:
   the event more than 48 h in the future, then it uses the previous year (so
   December logs read in January stay in December).
 - Ambiguous zone abbreviations (`IST`, `EST`, `CET`, …) are **refused on
-  purpose** (IST alone can mean India, Israel or Ireland). Use a numeric
-  `tz: "+05:30"` instead. Only `Z`/`UTC`/`GMT` and numeric offsets are accepted.
+  purpose** (IST alone can mean India, Israel or Ireland). Accepted `tz:`
+  values: numeric offsets (`"+05:30"`), IANA zone IDs (`"Asia/Kolkata"`,
+  DST-aware), `Z`/`UTC`/`GMT`, and the explicit acknowledgment
+  `"assume_utc"` (below).
+- **Zoneless-format lint:** formats with no zone (`nginx_error`, `asctime`,
+  `rfc3164`, `suricata`) silently assume UTC — correct only when the source
+  host logs UTC. The engine warns at rule load when such a format has no
+  `tz:`. Declare the real offset, or acknowledge deliberately with
+  `tz: "assume_utc"`.
+- **Two timestamps on one line?** Declare both — the shipper prefix *and* the
+  body time — with an `alt:` sub-block, and the engine arbitrates when one of
+  them lies (a mislabeled host clock claims to be in the future of its own
+  ingestion). See "Dual-timestamp arbitration" in
+  [configuration.md](configuration.md#timestamp-skew-validation-optional-default-off),
+  along with the optional engine-wide future-skew gate.
 - A parse failure never drops the event: `@timestamp` stays at ingest time and
   `event.timestamp_source: ingest_fallback` makes it easy to count/find in
   Kibana. Filter on that field to spot sources that need a `timestamp:` fix.
-- Regression suite: `python3 test_timestamps.py` (run it after touching any
-  `timestamp:` block or `core/timeparse.py`).
+- Regression suite: `python3 test_timestamps.py` and `python3 test_skew.py`
+  (run them after touching any `timestamp:` block, `core/timeparse.py`, or
+  the skew gate).
 
 ---
 
@@ -492,8 +506,10 @@ per-pattern timestamp block only for patterns with a different time format.
 Never map a time into "@timestamp" or "event.created" via mapping as a substitute
 for this block — mapped values are raw unparsed strings.
 Never emit tz as an abbreviation (IST/EST/CET are ambiguous and rejected);
-use a numeric offset like "+05:30". If the samples show no timezone and none is
-known, omit tz (the engine assumes UTC and tags the event log_assumed_utc).
+use a numeric offset like "+05:30" or an IANA zone like "Asia/Kolkata". If the
+samples show no timezone and none is known, emit tz: "assume_utc" — an explicit
+acknowledgment that UTC is assumed (the engine warns on zoneless formats
+without any tz:, and tags such events log_assumed_utc).
 
 # ECS RULES (critical)
 Every value on the RIGHT side of mapping, and every key under static, MUST be a

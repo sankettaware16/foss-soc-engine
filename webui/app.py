@@ -368,10 +368,14 @@ def build_engines():
     """Compile every rules/*.yaml into a UniversalEngine. Returns
     (engines, meta, errors) with no background watcher thread."""
     # Honor config.yaml `redis:` so testing a stateful rule from the UI talks
-    # to the same Redis as the engine (defaults to localhost when absent).
+    # to the same Redis as the engine (defaults to localhost when absent),
+    # and `timestamp_validation:` so Test Log shows the same skew behavior
+    # the engine applies.
     try:
-        from core.engine import configure_redis
-        configure_redis(load_config().get("redis"))
+        from core.engine import configure_redis, configure_timestamp_validation
+        cfg = load_config()
+        configure_redis(cfg.get("redis"))
+        configure_timestamp_validation(cfg.get("timestamp_validation"))
     except Exception:
         pass
     engines, meta, errors = {}, {}, []

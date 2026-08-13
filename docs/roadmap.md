@@ -24,6 +24,11 @@ Shipped and maintained:
   plugin.
 - Elasticsearch index template pre-defining every engine field, so a first
   document can never mis-type a field for the whole index.
+- Timestamp skew validation: an opt-in future-skew gate that detects and
+  corrects timezone-shaped clock lies against the ingest clock,
+  dual-timestamp (`alt:`) arbitration for lines that carry two times, and a
+  rule-load lint for zoneless formats — born from a production incident where
+  mis-zoned error events simulated a second attack.
 
 ## Next Release
 
@@ -35,8 +40,12 @@ Priorities drawn from production operation:
 - **Template deploy helper**: merge the engine's field mappings into an
   *existing* higher-priority index template instead of assuming the shipped
   one wins (composable templates are winner-takes-all).
-- **Per-source timezone overrides**: a `source_host → tz` map for producers
-  whose clocks or zone labels are wrong, instead of per-rule workarounds.
+- **Learned per-source clock offsets**: the shipped skew gate and
+  dual-timestamp arbitration (see Current) detect and correct clock lies
+  per event; the next step is an in-memory `(host, service, rule) → offset`
+  table that learns a consistently-lying source after N corrected samples
+  and pre-applies its offset — including to past-ward shifts the future gate
+  cannot see — expiring automatically when the source's clock is fixed.
 - Optional `confluent-kafka` (librdkafka) consumer for higher per-core
   throughput on the Kafka leg.
 - Additional built-in rules with golden-sample coverage; broader timestamp
