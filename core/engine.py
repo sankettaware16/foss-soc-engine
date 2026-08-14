@@ -849,18 +849,26 @@ class UniversalEngine:
                     # match: omit the field entirely — never emit null, never
                     # crash coercing None (audit A1#9 / A2#1)
                     continue
-                target, dtype = mapping[k].split('|') if '|' in mapping[k] else (mapping[k], 'str')
-                if dtype == 'int':
-                    try:
-                        v = int(v)
-                    except (ValueError, TypeError):
-                        pass  # non-numeric capture stays a string, line survives
-                elif dtype == 'float':
-                    try:
-                        v = float(v)
-                    except (ValueError, TypeError):
-                        pass
-                self._set_nested(event, target, v)
+                # One capture may feed SEVERAL fields: a list value fans the
+                # same text out to every target (e.g. a proxy node name into
+                # both host.name and observer.hostname). Each entry keeps its
+                # own |int / |float modifier.
+                targets = mapping[k] if isinstance(mapping[k], list) \
+                    else [mapping[k]]
+                for spec in targets:
+                    val = v
+                    target, dtype = spec.split('|') if '|' in spec else (spec, 'str')
+                    if dtype == 'int':
+                        try:
+                            val = int(val)
+                        except (ValueError, TypeError):
+                            pass  # non-numeric capture stays a string, line survives
+                    elif dtype == 'float':
+                        try:
+                            val = float(val)
+                        except (ValueError, TypeError):
+                            pass
+                    self._set_nested(event, target, val)
 
     def _apply_static(self, event, static):
         if static:

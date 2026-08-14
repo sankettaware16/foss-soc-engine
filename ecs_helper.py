@@ -38,7 +38,9 @@ def iter_targets(rule):
     def from_block(mapping, static, where):
         if isinstance(mapping, dict):
             for src, tgt in mapping.items():
-                yield tgt, f"{where} mapping[{src}]"
+                # a list value fans one capture out to several fields
+                for t in (tgt if isinstance(tgt, list) else [tgt]):
+                    yield t, f"{where} mapping[{src}]"
         if isinstance(static, dict):
             for k in static.keys():
                 yield k, f"{where} static"

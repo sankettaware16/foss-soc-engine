@@ -182,6 +182,10 @@ static:
   string and the event survives. These two suffixes are the **only** value
   transforms the engine has (no lookups, no string ops) — anything fancier
   belongs downstream (Logstash / ES ingest pipeline).
+- **Fan-out:** a mapping value may be a **list** of targets — one capture fills
+  several fields: `host: ["host.name", "observer.hostname"]` (e.g. a proxy
+  node name that is both the host and, semantically, the observing device).
+  Each entry keeps its own `|int`/`|float` modifier.
 - **Nesting** is automatic from dots: `source.geo.country_name` builds the nested
   object for you.
 - **JSON paths** use dots; `*` expands a list: `items.*.id`.

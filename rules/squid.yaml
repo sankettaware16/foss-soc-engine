@@ -12,7 +12,7 @@ patterns:
     prematch: "TCP_TUNNEL"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_TUNNEL(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>CONNECT)\s+(?P<dst_ip>\d+\.\d+\.\d+\.\d+):(?P<dst_port>\d+)\s+-\s+ORIGINAL_DST/(?P<orig_dst>\d+\.\d+\.\d+\.\d+)\s+-$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -48,7 +48,7 @@ patterns:
     prematch: "TCP_TUNNEL"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_TUNNEL(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>CONNECT)\s+(?P<dst>[A-Za-z0-9.\-]+):(?P<dst_port>\d+)\s+-\s+(?:ORIGINAL_DST|HIER_DIRECT)/(?P<orig_dst>\S+)\s+-$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -79,7 +79,7 @@ patterns:
     prematch: "TCP_"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<dst_ip>[0-9a-fA-F:]+):(?P<dst_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?P<url>\S+)\s+-\s+(?:ORIGINAL_DST|HIER_DIRECT)/(?P<orig_dst>\S+)\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -110,7 +110,7 @@ patterns:
     prematch: "ORIGINAL_DST/"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?P<url>\S+)\s+-\s+ORIGINAL_DST/(?P<orig_dst_ip>\d+\.\d+\.\d+\.\d+)\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -141,7 +141,7 @@ patterns:
     prematch: "ORIGINAL_DST/"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?P<url>\S+)\s+-\s+ORIGINAL_DST/(?P<orig_dst_host>[A-Za-z0-9][A-Za-z0-9.\-]*)\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -172,7 +172,7 @@ patterns:
     prematch: "TCP_DENIED"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>TCP_DENIED)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -200,7 +200,7 @@ patterns:
     prematch: "TCP_DENIED"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>TCP_DENIED)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>\S+)\s+(?P<dst>[^:\s]+):(?P<dst_port>\d+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -232,7 +232,7 @@ patterns:
     prematch: "HIER_NONE"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>[A-Z]+)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -260,7 +260,7 @@ patterns:
     prematch: "HIER_NONE"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -288,7 +288,7 @@ patterns:
     prematch: "CONNECT"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>CONNECT)\s+(?P<dst>[^:\s]+):(?P<dst_port>\d+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -317,7 +317,7 @@ patterns:
     prematch: "HIER_NONE"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>\S+)\s+(?P<dst>[^:\s]+):(?P<dst_port>\d+)\s+-\s+HIER_NONE/-\s+-$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -345,7 +345,7 @@ patterns:
     prematch: "PRI"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>PRI)\s+\*\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -372,7 +372,7 @@ patterns:
     prematch: "error:"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+\S+\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"
@@ -399,7 +399,7 @@ patterns:
     prematch: "error:"
     regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)\[(?P<pid>\d+)\]:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+\S+\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+-$'
     mapping:
-      host: "host.name"
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
       pid: "process.pid|int"
       duration: "event.duration|int"

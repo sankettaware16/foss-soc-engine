@@ -494,7 +494,9 @@ def _rule_targets(rule):
     def block(mapping, static, where):
         if isinstance(mapping, dict):
             for src, tgt in mapping.items():
-                out.append((tgt, f"{where}[{src}]"))
+                # a list value fans one capture out to several fields
+                for t in (tgt if isinstance(tgt, list) else [tgt]):
+                    out.append((t, f"{where}[{src}]"))
         if isinstance(static, dict):
             for key in static.keys():
                 out.append((key, f"{where} static"))
