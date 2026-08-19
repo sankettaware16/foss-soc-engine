@@ -278,10 +278,17 @@ knowledge becomes searchable fields on every event.
 
 1. Click **IP Map** → **+ Add entry**. (Or **Insert example** to start from a
    filled-in template.)
-2. Fill the form: type the **IP range** (the form checks it instantly and
-   shows how many IPs it covers), give the place a **name**, then
-   **+ Add field** for building / floor / room / owner — every field name is
-   checked against ECS **as you type** (✓ ECS · ~ custom, ok · ✗ use …).
+2. Fill the form: type the **IP range** exactly as your allocation page
+   prints it — CIDR (`10.50.0.0/16`), IP + subnet mask
+   (`10.70.32.0/255.255.224.0`), a range (`10.10.1.1-99`) or a single IP —
+   the form checks it instantly and shows how many IPs it covers. Give the
+   place a **name**, then **+ Add field** for zone / department / building /
+   wing / floor / room / owner — every field name is checked against ECS
+   **as you type** (✓ ECS · ~ custom, ok · ✗ use …). Tip: fill `site.zone`
+   (department / hostel / residential / server-room…) on your broad entries —
+   a Kibana pie of `source.site.zone` instantly shows where traffic comes
+   from. Full keyword & field reference:
+   [configuration.md](configuration.md#internal-ip-map-enrich-your-own-address-space).
 3. Click **Add entry** and repeat. The table below lists everything; use the
    filter box to find entries, **Edit** to change one, **⧉** to duplicate a
    similar room (fastest way to enter 20 faculty offices), **✕** to remove.

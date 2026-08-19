@@ -15,9 +15,11 @@ Map file format (all range syntaxes may be mixed freely)::
     defaults:                       # optional: fields added to EVERY entry
       site.organization: Example U  # of this file (entry fields win)
     networks:
-      - range: 10.10.4.0/24                # CIDR
-        name: Teaching lab 1               # sugar for geo.name (real ECS)
-      - range: 10.10.1.1-10                # short range (last octet)
+      - range: 10.50.0.0/16                # CIDR network (as IPAM tables show)
+        name: Engineering department
+      - range: 10.70.32.0/255.255.224.0    # IP/netmask, exactly as printed
+        name: Hostel 01 DHCP pool
+      - range: 10.10.1.1-10                # partial allocation: short range
         name: Class room 1
         fields:                            # any extra fields, dotted paths,
           site.building: Engineering Bldg  #   nested under source./destination.
@@ -84,15 +86,32 @@ def _ip_to_int(text):
 
 
 def _parse_one_range(item):
-    """One range literal -> (lo_int, hi_int, ip_version). Accepts a CIDR
-    (10.0.0.0/24), a full range (10.0.0.1-10.0.0.99), a short IPv4 range where
-    the right side is just the final octet (10.0.0.1-99), or a single IP.
-    Raises ValueError with a message an operator can act on."""
+    """One range literal -> (lo_int, hi_int, ip_version). Accepts a network in
+    CIDR (10.0.0.0/16 - host bits are fine, 10.0.0.1/24 means the whole /24)
+    or IP/netmask notation exactly as allocation tables print it
+    (10.70.32.0/255.255.224.0), a full range (10.0.0.1-10.0.0.99), a short IPv4
+    range where the right side is just the final octet (10.0.0.1-99), or a
+    single IP. Raises ValueError with a message an operator can act on."""
     s = str(item).strip()
     if not s:
         raise ValueError("empty range")
     if "/" in s:
-        net = ipaddress.ip_network(s, strict=False)
+        try:
+            net = ipaddress.ip_network(s, strict=False)
+        except ValueError:
+            ip_part, _, suffix = s.partition("/")
+            if suffix.isdigit() and int(suffix) > 32 and ":" not in ip_part:
+                # the classic slip: 10.0.0.1/255 meant either the whole
+                # subnet or a partial dash-range
+                base = ip_part.rsplit(".", 1)[0]
+                hint = (f"a whole subnet is '{base}.0/24'"
+                        + (f", a partial range is '{ip_part}-{suffix}'"
+                           if int(suffix) <= 255 else ""))
+                raise ValueError(
+                    f"'{s}': /{suffix} is not a valid prefix (0-32) - {hint}")
+            raise ValueError(
+                f"'{s}': not a valid network - use CIDR (10.0.0.0/24) or "
+                "IP/netmask (10.0.0.0/255.255.255.0)")
         return int(net.network_address), int(net.broadcast_address), net.version
     # a '-' separates a range; IPv6 literals themselves never contain '-'
     if "-" in s:

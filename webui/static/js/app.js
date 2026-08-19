@@ -631,8 +631,8 @@ function openIpmapEntryForm(idx) {
     <h4 class="ipm-form-h">${idx >= 0 ? "Edit entry" : "New entry"}</h4>
     <div class="row gap wrap">
       <div class="field grow">
-        <label>IP range(s) — CIDR · short (10.0.0.1-99) · full range · single IP · comma-separated for several</label>
-        <input id="ipf-ranges" placeholder="e.g. 10.10.1.0/24   or   10.10.1.1-10, 10.10.9.1-5"
+        <label>IP range(s) — CIDR (10.50.0.0/16) · IP/netmask (10.70.32.0/255.255.224.0) · range (10.10.1.1-99) · single IP · comma-separated for several</label>
+        <input id="ipf-ranges" placeholder="e.g. 10.50.0.0/16   or   10.10.1.1-10, 10.10.9.1-5"
                value="${attr((e.ranges || []).join(", "))}" />
         <span id="ipf-range-badge" class="ipm-badge"></span>
       </div>
@@ -852,28 +852,42 @@ async function ipmapLookup() {
   } catch (e) { toast(e.message, "bad"); }
 }
 
-const IPMAP_EXAMPLE = `# Internal IP map — which range is which place. Full syntax: docs/configuration.md
-# range styles:  10.0.0.0/24  ·  10.0.0.1-10.0.0.99  ·  10.0.0.1-99  ·  10.0.0.5
-# (example names/ranges are fictional — replace them with YOUR allocation table)
+const IPMAP_EXAMPLE = `# Internal IP map — which range is which place. Full reference: docs/configuration.md
+# range styles:  10.50.0.0/16  ·  10.70.32.0/255.255.224.0  ·  10.0.0.1-99  ·  10.0.0.5
+# (all example names/ranges are fictional — replace them with YOUR allocation table)
 defaults:                          # added to every entry in this file
   site.organization: "My Org"
 
 networks:
-  # Broad entry for the whole floor…
-  - range: 10.10.1.0/24
+  # Broad zones first — even just these give "where is traffic from" dashboards
+  - range: 10.50.0.0/16
+    name: "Engineering department network"
+    fields:
+      site.zone: "department"
+      site.department: "Engineering"
+
+  - range: 10.70.32.0/255.255.224.0        # hostel pool, IP/netmask as printed
+    name: "Hostel 01 / Wing 1 / Floor 0-1"
+    fields:
+      site.zone: "hostel"
+      site.building: "Hostel 01"
+      site.wing: "1"
+      site.floor: "0,1"
+
+  # …then detail inside them: floor + rooms (layers merge automatically;
+  # the more specific range wins any conflict)
+  - range: 10.50.1.0/24
     name: "Engineering 1st floor"
     fields:
       site.building: "Engineering Building"
       site.floor: "1"
 
-  # …and narrower room ranges inside it (they inherit the floor's fields;
-  # the more specific range wins any conflict).
-  - range: 10.10.1.1-10
+  - range: 10.50.1.1-10
     name: "Class room 1 (101)"
     fields:
       site.room: "101"
 
-  - ranges: [10.10.2.11-15, 10.10.9.1-5]        # one room, several ranges
+  - ranges: [10.50.2.11-15, 10.50.9.1-5]   # one room, several ranges
     name: "Faculty office 108"
     fields:
       site.building: "Engineering Building"

@@ -78,6 +78,19 @@ def test_parsing():
     check("single ip", lo == hi and ver == 4)
     check("short range to 255", one("10.77.152.1-255")[1] == 0x0A4D98FF)
 
+    # networks written the way real allocation pages print them
+    lo, hi, ver = one("10.70.32.0/255.255.224.0")   # IP + subnet mask
+    check("ip/netmask notation",
+          (lo, hi) == (one("10.70.32.0")[0], one("10.70.63.255")[0]))
+    check("cidr with host bits = whole subnet",
+          one("10.77.152.1/24") == one("10.77.152.0/24"))
+    try:
+        parse_range_spec("10.77.152.1/255")
+        check("helpful /255 error", False)
+    except ValueError as e:
+        check("helpful /255 error",
+              "10.77.152.0/24" in str(e) and "10.77.152.1-255" in str(e))
+
     r = parse_range_spec("10.77.157.11-15, 10.77.15.1-5")
     check("comma list", len(r) == 2 and r[1][2] == 4)
     r = parse_range_spec(["10.77.1.1-255", "10.77.2.1-255"])
@@ -88,7 +101,7 @@ def test_parsing():
 
     for bad in ["10.77.999.1-5", "10.77.156.10-2", "10.0.0.1-999",
                 "fdc0::1-9", "10.0.0.1-fdc0::2", "", "banana",
-                "10.0.0.0/33"]:
+                "10.0.0.0/33", "10.70.32.0/255.255.0.224"]:
         try:
             parse_range_spec(bad)
             check(f"rejects {bad!r}", False)

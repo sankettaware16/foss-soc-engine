@@ -131,6 +131,53 @@ networks:
     name: "Faculty office 108"
 ```
 
+### Keywords (the complete list)
+
+| Keyword | Where | Meaning |
+|---|---|---|
+| `defaults:` | file top level, optional | `field: value` pairs added to **every** entry of that file (an entry's own fields win on conflict) — e.g. `site.organization` once per file |
+| `networks:` | file top level, required | the list of entries |
+| `range:` | entry | one range, or several comma-separated |
+| `ranges:` | entry | a YAML list of ranges (use `range:` *or* `ranges:`, not both) |
+| `name:` | entry, optional | plain-text label → stored as **`geo.name`** (a real ECS field, shown next to GeoIP city/country in Kibana) |
+| `fields:` | entry, optional | any extra `dotted.name: value` pairs added to matching events, nested under `source.` / `destination.` |
+
+### Range syntax (write networks the way your tables print them)
+
+| You write | Meaning | Matches your IPAM page's… |
+|---|---|---|
+| `10.50.0.0/16` | CIDR network (host bits are fine: `10.50.1.7/24` = the whole /24) | "Network" column |
+| `10.70.32.0/255.255.224.0` | IP + subnet mask | "Subnet Mask" column |
+| `10.70.32.0-10.70.63.255` | full range | "DHCP IP Pool" column |
+| `10.10.1.1-10` | short range (only the last octet varies) | room/desk allocations |
+| `10.10.0.53` | single host | servers, gateways, DNS |
+| `[10.10.2.11-15, 10.10.9.1-5]` | list (or comma-separated string) = one entry, several ranges | rooms with split allocations |
+
+A typo like `10.50.152.1/255` is rejected with a hint (a whole subnet is
+`10.50.152.0/24`; a partial range is `10.50.152.1-255`).
+
+### Recommended fields (works even when you know very little)
+
+`name:` → `geo.name` is real ECS; everything else below is a **custom
+`site.*` namespace** the validator explicitly allows. Fill what you have,
+skip what you don't:
+
+| Field | Example values | Why |
+|---|---|---|
+| `site.zone` | `department` · `hostel` · `residential` · `server-room` · `guest-wifi` · `infrastructure` · `vpn` | **the one generic dimension** — even a 5-line map of broad /16s per zone makes a Kibana pie of `source.site.zone` answer "where is this traffic coming from?" |
+| `site.department` | `CSE`, `Physics`, `AERO` | departmental allocations |
+| `site.building` | `Hostel 01`, `Engineering Building` | |
+| `site.wing` | `1`, `A` | hostel/large-building wings |
+| `site.floor` | `"0,1"`, `basement`, `3` | |
+| `site.room` | `"101"`, `B03`, `A-108` | |
+| `site.type` | `teaching-lab`, `faculty-office`, `dhcp-pool`, `dns-server` | finer detail than zone |
+| `site.owner` / `site.contact` | `sysadmin team` / an email | who to call when its traffic looks wrong |
+
+Start coarse, refine later: broad zone/department entries first, then add
+buildings and rooms inside them — **layering** merges every matching level
+onto the event automatically (see the complete worked example:
+`examples/internal_ips.example.yaml`).
+
 Semantics and guarantees:
 
 - **Both directions**, same as GeoIP: `source.ip` and `destination.ip`.
