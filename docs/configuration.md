@@ -103,14 +103,16 @@ plan once and matching source/destination IPs are enriched with it:
 ```yaml
 internal_map:
   enabled: true
-  path: "internal_ips.yaml"   # one YAML file, OR a directory (one per building)
+  path: "database/internal_ips.yaml"   # one file, OR a directory (one per building)
 ```
 
-The map file is **yours**, not the repository's: `internal_ips.yaml` is
-`.gitignore`d so your real network plan never leaves your machines and
-`git pull` never touches it. Create it by copying the worked example
-(`cp examples/internal_ips.example.yaml internal_ips.yaml`) or straight from
-the Web UI's *IP Map* tab (Save creates it). Fictional sample:
+The map file is **yours**, not the repository's: it is `.gitignore`d so your
+real network plan never leaves your machines and `git pull` never touches it.
+It lives in `database/` next to the GeoIP `.mmdb` files. Create it by copying
+the worked example (`cp examples/internal_ips.example.yaml
+database/internal_ips.yaml`) or straight from the Web UI's *IP Map* tab — a
+visual editor with add/edit/duplicate/delete, per-field ECS checking and test
+lookups (Save creates the file). Fictional sample:
 
 ```yaml
 defaults:                          # optional: added to every entry in this file

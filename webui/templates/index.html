@@ -295,6 +295,10 @@
             <div class="row gap wrap">
               <select id="ipmap-file" style="display:none"></select>
               <button id="ipmap-new" class="btn ghost small" style="display:none">+ New file</button>
+              <div class="seg">
+                <button class="seg-btn active" data-ipmode="visual">Visual editor</button>
+                <button class="seg-btn" data-ipmode="raw">Raw YAML</button>
+              </div>
               <button id="ipmap-example" class="btn ghost small">Insert example</button>
               <button id="ipmap-validate" class="btn ghost small">Validate</button>
               <button id="ipmap-save" class="btn primary small">Save</button>
@@ -302,9 +306,46 @@
             </div>
           </div>
           <p class="muted small" id="ipmap-status" style="margin-top:4px"></p>
-          <textarea id="ipmap-content" class="code-area tall" spellcheck="false"
-            placeholder="Describe your own subnets here — which range is which building, room, lab…
+
+          <!-- visual (form/CRUD) editor -->
+          <div id="ipmap-visual">
+            <div class="row between wrap" style="margin:10px 0 8px">
+              <div class="row gap">
+                <button id="ipmap-add" class="btn primary small">+ Add entry</button>
+                <button id="ipmap-defaults-btn" class="btn ghost small">File defaults</button>
+              </div>
+              <input id="ipmap-filter" type="search" placeholder="Filter entries…" style="max-width:230px" />
+            </div>
+            <div id="ipmap-defaults-summary" class="ipm-defsum"></div>
+            <div id="ipmap-defaults-pane" class="ipmap-form" style="display:none"></div>
+            <div id="ipmap-form" class="ipmap-form" style="display:none"></div>
+            <div class="tbl-wrap ipmap-tblwrap">
+              <table class="tbl" id="ipmap-table">
+                <thead><tr><th style="width:26%">Range(s)</th><th style="width:26%">Name</th><th>Fields</th><th style="width:150px"></th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="muted small" style="margin-top:8px">Changes here are applied only when you click <b>Save</b>. Saving from the visual editor rewrites the file in a standard layout (hand-written comments are not kept — use Raw YAML if you rely on them).</p>
+          </div>
+
+          <!-- raw YAML editor -->
+          <div id="ipmap-raw" style="display:none">
+            <textarea id="ipmap-content" class="code-area tall" spellcheck="false"
+              placeholder="Describe your own subnets here — which range is which building, room, lab…
 Click “Insert example” to start from a filled-in template."></textarea>
+          </div>
+
+          <datalist id="ipmap-field-list">
+            <option value="site.building"></option>
+            <option value="site.floor"></option>
+            <option value="site.room"></option>
+            <option value="site.type"></option>
+            <option value="site.owner"></option>
+            <option value="site.contact"></option>
+            <option value="site.department"></option>
+            <option value="site.organization"></option>
+          </datalist>
+
           <span id="ipmap-msg" class="muted small"></span>
           <div id="ipmap-report" class="ecs-report"></div>
         </div>
@@ -435,7 +476,7 @@ Click “Insert example” to start from a filled-in template."></textarea>
             <li><b>Test Log</b> — paste log lines or upload a file, pick a parser (or <code>AUTO</code> to let the engine find the right one), and Run. You get the parsed ECS JSON plus a parsed / no-match summary.</li>
             <li><b>Rules</b> — click a rule to view/edit its YAML. Use a <b>template</b> to start a new parser, <b>Check ECS fields</b> to validate field names, then <b>Save</b>.</li>
             <li><b>Config</b> — edit <code>config.yaml</code> and <b>Validate</b> it (same checks as the CLI validator) before going live.</li>
-            <li><b>IP Map</b> — like GeoIP, but for YOUR network: describe which internal range is which building/room/lab, and matching events are enriched with those fields. Edit, <b>Validate</b>, <b>Save</b>, then <b>Try an IP</b> to see the result; the running engine picks up saves within ~10&nbsp;s.</li>
+            <li><b>IP Map</b> — like GeoIP, but for YOUR network: describe which internal range is which building/room/lab, and matching events are enriched with those fields. <b>+ Add entry</b> opens a form (range → name → fields, each field ECS-checked as you type); edit/duplicate/delete entries in the table, <b>Save</b>, then <b>Try an IP</b> to see the result. The running engine picks up saves within ~10&nbsp;s; a <b>Raw YAML</b> mode exists for hand-editing.</li>
             <li><b>ECS Helper</b> — look up the correct ECS field for any concept, or autocorrect a wrong name.</li>
             <li><b>Preflight</b> — when you are ready to connect Kafka/Redis, run the live readiness check.</li>
             <li><b>Benchmark</b> — measure what this machine can parse (EPS + latency + utilization&nbsp;%), check whether the live pipeline is real-time, or reconstruct how it performed during a past traffic spike.</li>

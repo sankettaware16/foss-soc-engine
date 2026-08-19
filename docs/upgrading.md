@@ -73,7 +73,7 @@ Start from the shipped `config.yaml` and port your old values:
 | — | `redis:` block | only needed by stateful rules; defaults to localhost:6379 |
 | — | `auth.env_file` | Web UI login via your ELK `.env` (see README "Signing in") |
 | `geoip` | same + optional `asn_db_path` | comment `asn_db_path` out if you don't have the ASN mmdb |
-| — | `internal_map:` block | **optional & safe to omit** — without the block (or without an `internal_ips.yaml`) the engine behaves exactly as before. When you want internal-IP enrichment, add the block and create the map from `examples/internal_ips.example.yaml` or the Web UI **IP Map** tab. The map file is `.gitignore`d, so `git pull` never conflicts with it. If your `config.yaml` is locally modified, `git pull` may refuse as usual — stash → pull → re-apply, or simply add the two-line block by hand. |
+| — | `internal_map:` block | **optional & safe to omit** — without the block (or without an `internal_ips.yaml`) the engine behaves exactly as before. When you want internal-IP enrichment, add the block and create `database/internal_ips.yaml` from `examples/internal_ips.example.yaml` or the Web UI **IP Map** tab. The map file is `.gitignore`d, so `git pull` never conflicts with it. If your `config.yaml` is locally modified, `git pull` may refuse as usual — stash → pull → re-apply, or simply add the two-line block by hand. |
 
 **Site-specific rule values:** old rule files had site values (e.g. mail
 domains) hardcoded in regexes. Current rules take them as variables — edit the

@@ -64,7 +64,8 @@ the source to it in configuration.
   omitted — never emitted as nulls.
 - **Internal IP map** — GeoIP for *your own* address space: declare which subnet
   or range is which building/room/lab in plain YAML (`internal_ips.yaml`, or a
-  directory of files) and matching events are enriched with those fields
+  directory of files, in `database/` beside the GeoIP data) and matching
+  events are enriched with those fields
   (`source.geo.name`, `source.site.*`). Overlapping ranges layer (building +
   room), resolution is precomputed at load, lookups are LRU-cached, and edits
   hot-reload — designed to stay invisible at 1M+ EPS. Editable, validatable and
@@ -209,7 +210,7 @@ clock or timezone label is wrong — fix the source, not the engine.
 ├── config.yaml           # Main runtime configuration
 ├── core/                 # Parsing engine (strategies, routing, output, ECS schema)
 ├── rules/                # YAML parsing rules, one per log source
-├── internal_ips.yaml     # Internal IP map — yours, .gitignore'd (create from examples/)
+├── database/             # GeoIP .mmdb files + your internal_ips.yaml (both .gitignore'd)
 ├── utils/                # GeoIP + internal-IP-map enrichment, JSON acceleration
 ├── webui/                # Browser console (Flask)
 ├── elk-plugin/           # Native Kibana plugin + headless backend

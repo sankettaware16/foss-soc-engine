@@ -393,16 +393,58 @@ function renderReport(lines) {
 }
 
 /* ============================================================== *
- *  Internal IP map
+ *  Internal IP map — visual CRUD editor + raw YAML mode
  * ============================================================== */
-let IPMAP = null;
+const JSONH = { "Content-Type": "application/json" };
+let IPMAP = null;          // /api/ipmap status (dir mode, files, path)
+let IPMAP_DATA = null;     // {defaults:{}, networks:[]} — the visual model
+let IPMAP_MODE = "visual"; // "visual" | "raw"
+let IPMAP_EDIT = null;     // entry index being edited (-1 = adding new)
+let IPMAP_DIRTY = false;
+
+function attr(v) { return esc(v).replace(/"/g, "&quot;"); }
+function yq(v) { return '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'; }
+
+// The visual model → clean YAML (the file the engine reads).
+function emitMapYaml(d) {
+  const L = [];
+  const defs = Object.entries(d.defaults || {});
+  if (defs.length) {
+    L.push("defaults:");
+    defs.forEach(([k, v]) => L.push(`  ${k}: ${yq(v)}`));
+    L.push("");
+  }
+  const nets = d.networks || [];
+  if (!nets.length) return L.concat(["networks: []"]).join("\n") + "\n";
+  L.push("networks:");
+  nets.forEach((e) => {
+    const rs = e.ranges || [];
+    L.push(rs.length > 1 ? `  - ranges: [${rs.map(yq).join(", ")}]`
+                         : `  - range: ${yq(rs[0] || "")}`);
+    if (e.name) L.push(`    name: ${yq(e.name)}`);
+    const fs = Object.entries(e.fields || {});
+    if (fs.length) {
+      L.push("    fields:");
+      fs.forEach(([k, v]) => L.push(`      ${k}: ${yq(v)}`));
+    }
+  });
+  return L.join("\n") + "\n";
+}
+function currentIpmapYaml() {
+  return (IPMAP_MODE === "visual" && IPMAP_DATA)
+    ? emitMapYaml(IPMAP_DATA) : $("#ipmap-content").value;
+}
+function ipmapMarkDirty() {
+  IPMAP_DIRTY = true;
+  $("#ipmap-msg").textContent = "unsaved changes — click Save to apply them";
+}
+
 async function loadIpmap() {
   try {
     const d = await api("/api/ipmap");
     IPMAP = d;
-    $("#ipmap-count").textContent = `(${d.entries} entr${d.entries === 1 ? "y" : "ies"})`;
     const bits = [];
-    if (!d.configured) bits.push("No internal_map: block in config.yaml — add one in the Config tab to enable this feature.");
+    if (!d.configured) bits.push("No internal_map: block in config.yaml — add one in the Config tab to enable.");
     else if (!d.enabled) bits.push("internal_map is disabled in config.yaml (enabled: false).");
     else bits.push(`Mapping ${d.is_dir ? "folder" : "file"}: ${d.path} — saves reach the running engine within ~10 s, no restart.`);
     $("#ipmap-status").textContent = bits.join("  ");
@@ -425,23 +467,289 @@ async function loadIpmap() {
 async function openIpmapFile() {
   const dir = IPMAP && IPMAP.is_dir;
   const name = dir ? $("#ipmap-file").value : "";
-  if (dir && !name) { $("#ipmap-content").value = ""; return; }
+  closeIpmapForms();
+  IPMAP_DIRTY = false;
+  if (dir && !name) {
+    IPMAP_DATA = { defaults: {}, networks: [] };
+    $("#ipmap-content").value = "";
+    setIpmapMode("visual");
+    return;
+  }
   try {
     const d = await api("/api/ipmap/file" + (name ? "?name=" + encodeURIComponent(name) : ""));
     $("#ipmap-content").value = d.content || "";
     $("#ipmap-msg").textContent = d.found === false ? "File does not exist yet — Save will create it." : "";
+    if (d.parsed) {
+      IPMAP_DATA = d.parsed;
+      setIpmapMode("visual");
+    } else {
+      IPMAP_DATA = null;
+      setIpmapMode("raw");
+      toast("Visual editor unavailable (" + (d.parse_error || "unparseable file") + ") — fix it in Raw YAML", "warn");
+    }
   } catch (e) { toast(e.message, "bad"); }
 }
 $("#ipmap-file").addEventListener("change", openIpmapFile);
 
+function setIpmapMode(mode) {
+  if (mode === "visual" && !IPMAP_DATA) mode = "raw";
+  IPMAP_MODE = mode;
+  $$("#view-ipmap .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.ipmode === mode));
+  $("#ipmap-visual").style.display = mode === "visual" ? "" : "none";
+  $("#ipmap-raw").style.display = mode === "raw" ? "" : "none";
+  if (mode === "visual") renderIpmapVisual();
+}
+$$("#view-ipmap .seg-btn").forEach((b) => b.addEventListener("click", async () => {
+  const want = b.dataset.ipmode;
+  if (want === IPMAP_MODE) return;
+  if (want === "raw") {
+    if (IPMAP_DATA) $("#ipmap-content").value = emitMapYaml(IPMAP_DATA);
+    setIpmapMode("raw");
+    return;
+  }
+  try {
+    const d = await api("/api/ipmap/parse", { method: "POST", headers: JSONH,
+      body: JSON.stringify({ content: $("#ipmap-content").value }) });
+    if (!d.parsed) { toast("Cannot open the visual editor: " + d.parse_error, "bad"); return; }
+    IPMAP_DATA = d.parsed;
+    setIpmapMode("visual");
+  } catch (e) { toast(e.message, "bad"); }
+}));
+
+/* ----- visual table ----- */
+function ipmapChip(k, v) {
+  return `<span class="ipm-chip" title="${attr(k)}">${esc(k.replace(/^site\./, ""))}: <b>${esc(v)}</b></span>`;
+}
+function renderIpmapVisual() {
+  if (!IPMAP_DATA) return;
+  const q = ($("#ipmap-filter").value || "").toLowerCase();
+  const rows = [];
+  (IPMAP_DATA.networks || []).forEach((e, i) => {
+    const hay = [(e.ranges || []).join(" "), e.name || "",
+      Object.entries(e.fields || {}).map(([k, v]) => k + " " + v).join(" ")].join(" ").toLowerCase();
+    if (q && !hay.includes(q)) return;
+    rows.push(`<tr data-idx="${i}">
+      <td class="ipm-ranges">${(e.ranges || []).map(esc).join("<br>") || '<span class="muted">—</span>'}</td>
+      <td>${esc(e.name || "")}</td>
+      <td class="ipm-fields">${Object.entries(e.fields || {}).map(([k, v]) => ipmapChip(k, v)).join(" ")}</td>
+      <td class="ipm-actions">
+        <button class="btn ghost small" data-act="edit">Edit</button>
+        <button class="btn ghost small" data-act="dup" title="Duplicate this entry">⧉</button>
+        <button class="btn danger small" data-act="del" title="Delete this entry">✕</button>
+      </td></tr>`);
+  });
+  $("#ipmap-table tbody").innerHTML = rows.join("") ||
+    `<tr><td colspan="4" class="muted small">${q ? "No entries match the filter." : "No entries yet — click “+ Add entry” to map your first range."}</td></tr>`;
+  const defs = Object.entries(IPMAP_DATA.defaults || {});
+  $("#ipmap-defaults-summary").innerHTML = defs.length
+    ? '<span class="muted small">File defaults (added to every entry):</span> ' + defs.map(([k, v]) => ipmapChip(k, v)).join(" ")
+    : "";
+  const n = (IPMAP_DATA.networks || []).length;
+  $("#ipmap-count").textContent = `(${n} entr${n === 1 ? "y" : "ies"})`;
+}
+$("#ipmap-filter").addEventListener("input", renderIpmapVisual);
+
+$("#ipmap-table").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-act]");
+  if (!btn) return;
+  const idx = parseInt(btn.closest("tr").dataset.idx, 10);
+  const e = IPMAP_DATA.networks[idx];
+  if (btn.dataset.act === "del") {
+    if (!confirm(`Delete entry "${e.name || (e.ranges || []).join(", ")}"?`)) return;
+    IPMAP_DATA.networks.splice(idx, 1);
+    closeIpmapForms(); ipmapMarkDirty(); renderIpmapVisual();
+  } else if (btn.dataset.act === "dup") {
+    IPMAP_DATA.networks.splice(idx + 1, 0, JSON.parse(JSON.stringify(e)));
+    ipmapMarkDirty(); renderIpmapVisual(); openIpmapEntryForm(idx + 1);
+  } else {
+    openIpmapEntryForm(idx);
+  }
+});
+
+/* ----- entry / defaults forms ----- */
+function fieldRowHtml(k = "", v = "") {
+  return `<div class="ipm-frow">
+    <input class="ipm-fkey" list="ipmap-field-list" placeholder="site.building" value="${attr(k)}" />
+    <input class="ipm-fval" placeholder="value (e.g. Engineering Building)" value="${attr(v)}" />
+    <span class="ipm-ecs"></span>
+    <button class="btn ghost small ipm-fdel" title="Remove this field">✕</button>
+  </div>`;
+}
+function closeIpmapForms() {
+  $("#ipmap-form").style.display = "none";
+  $("#ipmap-defaults-pane").style.display = "none";
+  IPMAP_EDIT = null;
+}
+function wireFieldRows(scope) {
+  $$(".ipm-frow", scope).forEach((row) => {
+    if (row.dataset.wired) return;
+    row.dataset.wired = "1";
+    row.querySelector(".ipm-fdel").addEventListener("click", () => row.remove());
+    const key = row.querySelector(".ipm-fkey");
+    const badge = row.querySelector(".ipm-ecs");
+    let t;
+    const check = async () => {
+      const k = key.value.trim();
+      if (!k) { badge.textContent = ""; badge.className = "ipm-ecs"; return; }
+      if (!/^[A-Za-z0-9_@.-]+$/.test(k) || k.startsWith(".") || k.endsWith(".")) {
+        badge.textContent = "✗ bad name"; badge.className = "ipm-ecs bad"; return;
+      }
+      try {
+        const d = await api("/api/ecs/classify?field=" + encodeURIComponent("source." + k));
+        if (d.status === "ecs") { badge.textContent = "✓ ECS"; badge.className = "ipm-ecs good"; }
+        else if (d.status === "custom") { badge.textContent = "~ custom, ok"; badge.className = "ipm-ecs warn"; }
+        else {
+          const fix = (d.suggestion || "").replace(/^source\./, "");
+          badge.textContent = "✗ use " + fix; badge.className = "ipm-ecs bad";
+        }
+      } catch (e) { /* check is best-effort */ }
+    };
+    key.addEventListener("input", () => { clearTimeout(t); t = setTimeout(check, 350); });
+    if (key.value.trim()) check();
+  });
+}
+function readFieldRows(container) {
+  const out = {};
+  let bad = null;
+  $$(".ipm-frow", container).forEach((row) => {
+    const k = row.querySelector(".ipm-fkey").value.trim();
+    const v = row.querySelector(".ipm-fval").value;
+    if (!k && !v.trim()) return; // fully empty row: ignore
+    if (!/^[A-Za-z0-9_@.-]+$/.test(k) || k.startsWith(".") || k.endsWith(".")) {
+      bad = k || "(empty name)"; return;
+    }
+    out[k] = v;
+  });
+  return { fields: out, bad };
+}
+
+function openIpmapEntryForm(idx) {
+  IPMAP_EDIT = idx;
+  const e = idx >= 0 ? IPMAP_DATA.networks[idx] : { ranges: [], name: "", fields: {} };
+  const f = $("#ipmap-form");
+  f.innerHTML = `
+    <h4 class="ipm-form-h">${idx >= 0 ? "Edit entry" : "New entry"}</h4>
+    <div class="row gap wrap">
+      <div class="field grow">
+        <label>IP range(s) — CIDR · short (10.0.0.1-99) · full range · single IP · comma-separated for several</label>
+        <input id="ipf-ranges" placeholder="e.g. 10.10.1.0/24   or   10.10.1.1-10, 10.10.9.1-5"
+               value="${attr((e.ranges || []).join(", "))}" />
+        <span id="ipf-range-badge" class="ipm-badge"></span>
+      </div>
+      <div class="field grow">
+        <label>Name — what this place is (stored as geo.name)</label>
+        <input id="ipf-name" placeholder="e.g. Class room 1 (101)" value="${attr(e.name || "")}" />
+      </div>
+    </div>
+    <label class="ipm-flabel">Fields added to matching events <span class="muted small">— each name is ECS-checked as you type; custom site.* fields are allowed</span></label>
+    <div id="ipf-fields">${Object.entries(e.fields || {}).map(([k, v]) => fieldRowHtml(k, String(v))).join("")}</div>
+    <div class="row gap" style="margin-top:10px">
+      <button id="ipf-addfield" class="btn ghost small">+ Add field</button>
+      <span class="grow"></span>
+      <button id="ipf-save" class="btn primary small">${idx >= 0 ? "Update entry" : "Add entry"}</button>
+      <button id="ipf-cancel" class="btn ghost small">Cancel</button>
+    </div>`;
+  $("#ipmap-defaults-pane").style.display = "none";
+  f.style.display = "";
+  wireFieldRows(f);
+  $("#ipf-addfield").addEventListener("click", () => {
+    $("#ipf-fields").insertAdjacentHTML("beforeend", fieldRowHtml());
+    wireFieldRows(f);
+    const rows = $$(".ipm-frow", f);
+    rows[rows.length - 1].querySelector(".ipm-fkey").focus();
+  });
+  $("#ipf-cancel").addEventListener("click", closeIpmapForms);
+  $("#ipf-save").addEventListener("click", saveIpmapEntry);
+  const rng = $("#ipf-ranges");
+  let t;
+  rng.addEventListener("input", () => { clearTimeout(t); t = setTimeout(checkRangeBadge, 350); });
+  if (rng.value.trim()) checkRangeBadge();
+  rng.focus();
+}
+async function checkRangeBadge() {
+  const rng = $("#ipf-ranges");
+  const badge = $("#ipf-range-badge");
+  if (!rng || !badge) return null;
+  const spec = rng.value.trim();
+  if (!spec) { badge.textContent = ""; badge.className = "ipm-badge"; return null; }
+  try {
+    const d = await api("/api/ipmap/checkrange", { method: "POST", headers: JSONH,
+      body: JSON.stringify({ range: spec }) });
+    if (d.ok) {
+      badge.textContent = `✓ ${d.count} range(s) · ${fmtNum(d.ips)} IP(s)`;
+      badge.className = "ipm-badge good";
+    } else {
+      badge.textContent = "✗ " + d.error;
+      badge.className = "ipm-badge bad";
+    }
+    return d;
+  } catch (e) { return null; }
+}
+async function saveIpmapEntry() {
+  const spec = $("#ipf-ranges").value.trim();
+  if (!spec) { toast("Enter at least one IP range", "bad"); return; }
+  const rc = await checkRangeBadge();
+  if (rc && !rc.ok) { toast("Fix the IP range first: " + rc.error, "bad"); return; }
+  const { fields, bad } = readFieldRows($("#ipf-fields"));
+  if (bad) { toast(`Bad field name: ${bad}`, "bad"); return; }
+  const name = $("#ipf-name").value.trim();
+  if (!name && !Object.keys(fields).length && !Object.keys(IPMAP_DATA.defaults || {}).length) {
+    toast("Give the entry a name or at least one field — otherwise a match would add nothing", "bad");
+    return;
+  }
+  const entry = { ranges: spec.split(",").map((s) => s.trim()).filter(Boolean),
+                  name: name || null, fields };
+  const isEdit = IPMAP_EDIT >= 0;
+  if (isEdit) IPMAP_DATA.networks[IPMAP_EDIT] = entry;
+  else IPMAP_DATA.networks.push(entry);
+  closeIpmapForms();
+  ipmapMarkDirty();
+  renderIpmapVisual();
+  toast(isEdit ? "Entry updated — click Save to apply" : "Entry added — click Save to apply", "good");
+}
+
+$("#ipmap-add").addEventListener("click", () => openIpmapEntryForm(-1));
+$("#ipmap-defaults-btn").addEventListener("click", () => {
+  const pane = $("#ipmap-defaults-pane");
+  if (pane.style.display !== "none") { pane.style.display = "none"; return; }
+  $("#ipmap-form").style.display = "none";
+  IPMAP_EDIT = null;
+  pane.innerHTML = `
+    <h4 class="ipm-form-h">File defaults — added to EVERY entry (an entry's own fields win on conflict)</h4>
+    <div id="ipd-fields">${Object.entries(IPMAP_DATA.defaults || {}).map(([k, v]) => fieldRowHtml(k, String(v))).join("") || fieldRowHtml("site.organization", "")}</div>
+    <div class="row gap" style="margin-top:10px">
+      <button id="ipd-addfield" class="btn ghost small">+ Add field</button>
+      <span class="grow"></span>
+      <button id="ipd-save" class="btn primary small">Apply defaults</button>
+      <button id="ipd-cancel" class="btn ghost small">Cancel</button>
+    </div>`;
+  pane.style.display = "";
+  wireFieldRows(pane);
+  $("#ipd-addfield").addEventListener("click", () => {
+    $("#ipd-fields").insertAdjacentHTML("beforeend", fieldRowHtml());
+    wireFieldRows(pane);
+  });
+  $("#ipd-cancel").addEventListener("click", () => { pane.style.display = "none"; });
+  $("#ipd-save").addEventListener("click", () => {
+    const { fields, bad } = readFieldRows($("#ipd-fields"));
+    if (bad) { toast(`Bad field name: ${bad}`, "bad"); return; }
+    IPMAP_DATA.defaults = fields;
+    pane.style.display = "none";
+    ipmapMarkDirty();
+    renderIpmapVisual();
+  });
+});
+
+/* ----- save / validate / report ----- */
 function renderIpmapReport(r) {
   const out = [];
+  const x = (c) => (c > 1 ? ` <span class="muted">(×${c})</span>` : "");
   (r.errors || []).forEach((m) => out.push(`<div class="ecs-line bad">✗ ${esc(m)}</div>`));
   (r.ecs_problems || []).forEach((p) =>
-    out.push(`<div class="ecs-line bad">✗ field <b>${esc(p.field)}</b> → use <b>${esc(p.fix)}</b> <span class="muted">(${esc(p.loc)})</span></div>`));
+    out.push(`<div class="ecs-line bad">✗ field <b>${esc(p.field)}</b> → use <b>${esc(p.fix)}</b>${x(p.count || 1)}</div>`));
   (r.warnings || []).forEach((m) => out.push(`<div class="ecs-line warn">~ ${esc(m)}</div>`));
   (r.customs || []).forEach((c) =>
-    out.push(`<div class="ecs-line warn">~ ${esc(c.field)} <span class="muted">custom field, allowed (${esc(c.loc)})</span></div>`));
+    out.push(`<div class="ecs-line warn">~ ${esc(c.field)} <span class="muted">custom field, allowed</span>${x(c.count || 1)}</div>`));
   const n = r.entries || 0;
   if (!out.length) {
     out.push(`<div class="ecs-line good">✓ ${n} entr${n === 1 ? "y" : "ies"} — no problems</div>`);
@@ -452,19 +760,19 @@ function renderIpmapReport(r) {
 }
 
 $("#ipmap-save").addEventListener("click", async () => {
-  const body = { content: $("#ipmap-content").value };
+  const body = { content: currentIpmapYaml() };
   if (IPMAP && IPMAP.is_dir) {
     body.filename = $("#ipmap-file").value;
     if (!body.filename) { toast("No file selected — use + New file first", "bad"); return; }
   }
   try {
-    const d = await api("/api/ipmap/save", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    toast(`Saved ${d.saved} — live within ~10 s`, "good");
-    $("#ipmap-count").textContent = `(${d.entries} entr${d.entries === 1 ? "y" : "ies"})`;
+    const d = await api("/api/ipmap/save", { method: "POST", headers: JSONH,
+      body: JSON.stringify(body) });
+    $("#ipmap-content").value = body.content; // keep raw pane in sync
+    IPMAP_DIRTY = false;
     $("#ipmap-msg").textContent = "";
+    $("#ipmap-count").textContent = `(${d.entries} entr${d.entries === 1 ? "y" : "ies"})`;
+    toast(`Saved ${d.saved} — live within ~10 s`, "good");
     renderIpmapReport(d);
     HEALTH = null;
   } catch (e) { toast(e.message, "bad"); }
@@ -472,31 +780,36 @@ $("#ipmap-save").addEventListener("click", async () => {
 
 $("#ipmap-validate").addEventListener("click", async () => {
   try {
-    const d = await api("/api/ipmap/validate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: $("#ipmap-content").value }),
-    });
+    const d = await api("/api/ipmap/validate", { method: "POST", headers: JSONH,
+      body: JSON.stringify({ content: currentIpmapYaml() }) });
     renderIpmapReport(d);
     const bad = (d.errors || []).length + (d.ecs_problems || []).length;
     toast(bad ? `${bad} problem(s) — see the report` : "Map is valid", bad ? "bad" : "good");
   } catch (e) { toast(e.message, "bad"); }
 });
 
-$("#ipmap-example").addEventListener("click", () => {
-  if ($("#ipmap-content").value.trim()
-      && !confirm("Replace the editor contents with the example?")) return;
+$("#ipmap-example").addEventListener("click", async () => {
+  const has = IPMAP_MODE === "visual"
+    ? (IPMAP_DATA && (IPMAP_DATA.networks || []).length)
+    : $("#ipmap-content").value.trim();
+  if (has && !confirm("Replace the current map in the editor with the example?")) return;
   $("#ipmap-content").value = IPMAP_EXAMPLE;
-  toast("Example inserted — edit the ranges/names, then Save");
+  try {
+    const d = await api("/api/ipmap/parse", { method: "POST", headers: JSONH,
+      body: JSON.stringify({ content: IPMAP_EXAMPLE }) });
+    if (d.parsed) IPMAP_DATA = d.parsed;
+  } catch (e) { /* raw text is set either way */ }
+  setIpmapMode(IPMAP_MODE);
+  ipmapMarkDirty();
+  toast("Example inserted — edit the entries, then Save");
 });
 
 $("#ipmap-new").addEventListener("click", async () => {
-  const name = prompt("New map file name (e.g. cse_building.yaml):");
+  const name = prompt("New map file name (e.g. engineering_building.yaml):");
   if (!name) return;
   try {
-    const d = await api("/api/ipmap/save", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: name, content: IPMAP_EXAMPLE }),
-    });
+    const d = await api("/api/ipmap/save", { method: "POST", headers: JSONH,
+      body: JSON.stringify({ filename: name, content: IPMAP_EXAMPLE }) });
     toast("Created " + d.saved, "good");
     await loadIpmap();
     $("#ipmap-file").value = d.saved;
@@ -509,25 +822,22 @@ $("#ipmap-delete").addEventListener("click", async () => {
   if (!name) return;
   if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
   try {
-    await api("/api/ipmap/delete", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: name }),
-    });
+    await api("/api/ipmap/delete", { method: "POST", headers: JSONH,
+      body: JSON.stringify({ filename: name }) });
     toast("Deleted " + name, "good");
     loadIpmap();
   } catch (e) { toast(e.message, "bad"); }
 });
 
+/* ----- test lookup ----- */
 $("#ipmap-test").addEventListener("click", ipmapLookup);
 $("#ipmap-ip").addEventListener("keydown", (e) => { if (e.key === "Enter") ipmapLookup(); });
 async function ipmapLookup() {
   const ip = $("#ipmap-ip").value.trim();
   if (!ip) return;
   try {
-    const d = await api("/api/ipmap/lookup", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ip }),
-    });
+    const d = await api("/api/ipmap/lookup", { method: "POST", headers: JSONH,
+      body: JSON.stringify({ ip }) });
     if (!d.enabled) {
       $("#ipmap-test-out").innerHTML =
         '<div class="ecs-line warn">~ internal_map is not enabled in config.yaml</div>';

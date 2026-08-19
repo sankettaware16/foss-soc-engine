@@ -276,8 +276,23 @@ for the addresses only your organization knows. If your IT team keeps a
 spreadsheet like "room 101 = 10.10.1.1–10, gateway .250", this is where that
 knowledge becomes searchable fields on every event.
 
-1. Click **IP Map**, then **Insert example** to start from a filled-in template.
-2. Replace the example ranges with your own. Every entry is just:
+1. Click **IP Map** → **+ Add entry**. (Or **Insert example** to start from a
+   filled-in template.)
+2. Fill the form: type the **IP range** (the form checks it instantly and
+   shows how many IPs it covers), give the place a **name**, then
+   **+ Add field** for building / floor / room / owner — every field name is
+   checked against ECS **as you type** (✓ ECS · ~ custom, ok · ✗ use …).
+3. Click **Add entry** and repeat. The table below lists everything; use the
+   filter box to find entries, **Edit** to change one, **⧉** to duplicate a
+   similar room (fastest way to enter 20 faculty offices), **✕** to remove.
+   **File defaults** holds fields added to every entry (e.g.
+   `site.organization`).
+4. Click **Save** — the running engine reloads the map within ~10 seconds, no
+   restart. **Validate** re-checks everything without saving.
+5. Use **Try an IP** to check your work: type any address and see exactly the
+   fields its events will carry.
+
+Prefer typing YAML directly? Switch to **Raw YAML** — the same file as text:
 
    ```yaml
    - range: 10.10.4.0/24             # CIDR, 10.0.0.1-99, full range, or single IP
@@ -287,15 +302,13 @@ knowledge becomes searchable fields on every event.
        site.room: "B03"
    ```
 
-3. **Validate** shows problems instantly (bad ranges, misspelled keys, wrong
-   ECS names). **Save** applies it — the running engine reloads it within
-   ~10 seconds, no restart.
-4. Use **Try an IP** to check your work: type any address and see exactly the
-   fields its events will carry.
+   (Saving from the visual editor rewrites the file in a standard layout, so
+   hand-written comments are kept only if you work in Raw YAML mode.)
 
-> Your map stays **local**: `internal_ips.yaml` is `.gitignore`d, so your real
-> network plan is never committed or published, and updating the engine with
-> `git pull` never touches it.
+> Your map stays **local**: the file (`database/internal_ips.yaml`, next to
+> the GeoIP databases) is `.gitignore`d, so your real network plan is never
+> committed or published, and updating the engine with `git pull` never
+> touches it.
 
 Useful tricks:
 

@@ -10,7 +10,7 @@ from core import ecs_schema
 from core.engine import substitute_vars
 from core.timeparse import parse_offset
 from utils.internal_map import (load_map_files, resolve_map_files,
-                                iter_map_fields)
+                                iter_map_fields, DEFAULT_MAP_PATH)
 
 # Named formats known to core/timeparse.py; anything containing '%' is treated
 # as an explicit strptime format string.
@@ -566,7 +566,7 @@ def validate_internal_map(base_dir, config):
         report("INFO", "internal_map is disabled (internal_map.enabled: false)")
         return 0, 0
 
-    path = resolve_path(base_dir, block.get("path") or "internal_ips.yaml")
+    path = resolve_path(base_dir, block.get("path") or DEFAULT_MAP_PATH)
     files = resolve_map_files(path)
     if not files:
         report("WARN", f"internal_map file/directory not found: {path} - "
@@ -583,8 +583,12 @@ def validate_internal_map(base_dir, config):
         report("WARN", f"internal_map: {msg}")
         warnings += 1
 
-    custom = 0
+    # Judge each DISTINCT field name once (a 77-entry map putting site.room
+    # on every entry is ONE custom field, not 77 report lines).
+    seen_bad, customs = set(), set()
     for field, where in iter_map_fields(entries):
+        if field in seen_bad or field in customs:
+            continue
         status, suggestion = ecs_schema.classify(f"source.{field}")
         if status in ("alias", "typo"):
             fix = suggestion or ""
@@ -592,11 +596,15 @@ def validate_internal_map(base_dir, config):
                 fix = fix[len("source."):]
             report("ERROR", f"internal_map {where}: field '{field}' is not "
                             f"ECS - use '{fix}'")
+            seen_bad.add(field)
             errors += 1
         elif status == "custom":
-            custom += 1
-    if custom:
-        report("INFO", f"internal_map: {custom} custom (non-ECS) field(s) allowed")
+            customs.add(field)
+    if customs:
+        shown = sorted(customs)
+        listing = ", ".join(shown[:8]) + (", ..." if len(shown) > 8 else "")
+        report("INFO", f"internal_map: {len(customs)} distinct custom "
+                       f"(non-ECS) field(s) allowed ({listing})")
 
     if not errors:
         report("OK", f"internal_map: {len(entries)} entries loaded from "

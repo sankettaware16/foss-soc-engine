@@ -76,7 +76,7 @@ from core.schema import LogInput  # noqa: E402
 from core import ecs_schema  # noqa: E402
 from utils.internal_map import (  # noqa: E402
     InternalIPMap, load_map_files, load_map_text, resolve_map_files,
-    iter_map_fields,
+    iter_map_fields, parse_map_structure, parse_range_spec, DEFAULT_MAP_PATH,
 )
 import test_config as tc  # noqa: E402
 
@@ -785,25 +785,34 @@ def internal_map_settings():
     """(block, absolute path) for the internal IP map. The path may be one
     YAML file or a directory of them (one per building/site)."""
     block = load_config().get("internal_map") or {}
-    rel = block.get("path") or "internal_ips.yaml"
+    rel = block.get("path") or DEFAULT_MAP_PATH
     path = rel if os.path.isabs(rel) else os.path.join(DATA_ROOT, rel)
     return block, path
 
 
 def _ipmap_ecs(entries):
     """Same ECS gate as test_config.validate_internal_map: map fields land
-    under source./destination., so 'geo.name' is judged as 'source.geo.name'."""
-    problems, customs = [], []
+    under source./destination., so 'geo.name' is judged as 'source.geo.name'.
+    Aggregated per DISTINCT field name (a 77-entry map with site.room on
+    every entry gets ONE report line with a count, not 77 lines)."""
+    problems, customs = {}, {}
     for field, where in iter_map_fields(entries):
+        if field in problems:
+            problems[field]["count"] += 1
+            continue
+        if field in customs:
+            customs[field]["count"] += 1
+            continue
         status, sug = ecs_schema.classify(f"source.{field}")
         if status in ("alias", "typo"):
             fix = sug or ""
             if fix.startswith("source."):
                 fix = fix[len("source."):]
-            problems.append({"field": field, "fix": fix, "loc": where})
+            problems[field] = {"field": field, "fix": fix, "loc": where,
+                               "count": 1}
         elif status == "custom":
-            customs.append({"field": field, "loc": where})
-    return problems, customs
+            customs[field] = {"field": field, "loc": where, "count": 1}
+    return list(problems.values()), list(customs.values())
 
 
 def _safe_map_file(path, filename, is_dir):
@@ -856,10 +865,17 @@ def api_ipmap_file():
         # Single-file mode where the file does not exist yet: the editor
         # opens empty and Save will create it.
         return jsonify({"filename": os.path.basename(target),
-                        "content": "", "found": False})
+                        "content": "", "found": False,
+                        "parsed": {"defaults": {}, "networks": []},
+                        "parse_error": None})
     with open(target, "r", encoding="utf-8") as f:
-        return jsonify({"filename": os.path.basename(target),
-                        "content": f.read(), "found": True})
+        content = f.read()
+    # Structure for the visual editor; unrepresentable content (syntax error,
+    # unknown keys) comes back as parse_error and the UI falls back to raw.
+    parsed, perr = parse_map_structure(content)
+    return jsonify({"filename": os.path.basename(target),
+                    "content": content, "found": True,
+                    "parsed": parsed, "parse_error": perr})
 
 
 @app.route("/api/ipmap/save", methods=["POST"])
@@ -892,6 +908,30 @@ def api_ipmap_save():
     return jsonify({"saved": os.path.basename(target), "entries": len(entries),
                     "errors": errors, "warnings": warnings,
                     "ecs_problems": problems, "customs": customs})
+
+
+@app.route("/api/ipmap/parse", methods=["POST"])
+def api_ipmap_parse():
+    """Raw YAML -> visual-editor structure (used when switching modes)."""
+    body = request.get_json(force=True, silent=True) or {}
+    parsed, perr = parse_map_structure(body.get("content", ""))
+    return jsonify({"parsed": parsed, "parse_error": perr})
+
+
+@app.route("/api/ipmap/checkrange", methods=["POST"])
+def api_ipmap_checkrange():
+    """Instant feedback for the entry form's range box: is this a valid
+    CIDR / range / short range / single IP (or comma list of them)?"""
+    body = request.get_json(force=True, silent=True) or {}
+    spec = str(body.get("range", "")).strip()
+    if not spec:
+        return jsonify({"ok": False, "error": "range is required"})
+    try:
+        ranges = parse_range_spec(spec)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)})
+    ips = sum(hi - lo + 1 for lo, hi, _v in ranges)
+    return jsonify({"ok": True, "count": len(ranges), "ips": ips})
 
 
 @app.route("/api/ipmap/validate", methods=["POST"])

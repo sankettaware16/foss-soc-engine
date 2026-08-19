@@ -5,9 +5,10 @@ addresses those databases have nothing - while operators know exactly which
 range is which ("10.10.4.0/24 is teaching lab 1", "10.10.2.11-15 is faculty
 office 108"). This module turns that knowledge, written as plain YAML, into
 per-event enrichment the same way utils/geoip.py turns the MaxMind databases
-into source.geo.* - config.yaml `internal_map:` points at one YAML file (or a
-directory of them, e.g. one per building) and every source/destination IP
-inside a declared range gets that range's fields merged in.
+into source.geo.* - config.yaml `internal_map:` points at one YAML file
+(default: database/internal_ips.yaml, living next to the GeoIP .mmdb files;
+a directory of files - e.g. one per building - works too) and every source/
+destination IP inside a declared range gets that range's fields merged in.
 
 Map file format (all range syntaxes may be mixed freely)::
 
@@ -60,6 +61,10 @@ logger = logging.getLogger("soc-engine")
 # same internal hosts and scanners recur constantly, so repeats become a dict
 # hit). Override with internal_map.cache_size in config.yaml.
 INTERNAL_MAP_CACHE_SIZE = 50000
+
+# Where the map lives when internal_map.path is not set: next to the GeoIP
+# .mmdb files - all the "describe my world" databases in one folder.
+DEFAULT_MAP_PATH = "database/internal_ips.yaml"
 
 _WATCH_INTERVAL_SEC = 10  # same cadence as the rule registry watcher
 
@@ -269,6 +274,67 @@ def load_map_files(files):
     return entries, errors, warnings
 
 
+def parse_map_structure(text):
+    """YAML text -> the editable structure behind the Web UI's visual editor:
+    {'defaults': {field: value}, 'networks': [{'ranges': [str, ...],
+    'name': str|None, 'fields': {field: value}}]} - every range kept as its
+    ORIGINAL string so edits round-trip. Returns (structure, None), or
+    (None, reason) when the content cannot be represented in the editor
+    (syntax error, unknown keys, wrong shapes) - the raw-YAML mode handles
+    those. Range VALIDITY is not judged here; the loader/validator do that."""
+    try:
+        data = yaml.safe_load(text)
+    except Exception as e:  # noqa: BLE001
+        return None, f"YAML syntax error: {e}"
+    if data is None:
+        return {"defaults": {}, "networks": []}, None
+    if not isinstance(data, dict):
+        return None, "file must be a YAML mapping"
+    unknown = [str(k) for k in data if k not in _FILE_KEYS]
+    if unknown:
+        return None, f"unknown top-level key(s): {', '.join(sorted(unknown))}"
+    defaults = data.get("defaults")
+    if defaults is None:
+        defaults = {}
+    if not isinstance(defaults, dict):
+        return None, "defaults must be a mapping"
+    networks = data.get("networks")
+    if networks is None:
+        networks = []
+    if not isinstance(networks, list):
+        return None, "networks must be a list"
+    out = []
+    for i, e in enumerate(networks, start=1):
+        if not isinstance(e, dict):
+            return None, f"entry #{i} is not a mapping"
+        unknown = [str(k) for k in e if k not in _ENTRY_KEYS]
+        if unknown:
+            return None, (f"entry #{i} has unknown key(s): "
+                          f"{', '.join(sorted(unknown))}")
+        spec = e.get("range", e.get("ranges"))
+        if isinstance(spec, str):
+            ranges = [p.strip() for p in spec.split(",") if p.strip()]
+        elif isinstance(spec, (list, tuple)):
+            ranges = [str(v).strip() for v in spec if str(v).strip()]
+        elif spec is None:
+            ranges = []
+        else:
+            ranges = [str(spec).strip()]
+        fields = e.get("fields")
+        if fields is None:
+            fields = {}
+        if not isinstance(fields, dict):
+            return None, f"entry #{i}: fields must be a mapping"
+        name = e.get("name")
+        out.append({
+            "ranges": ranges,
+            "name": None if name is None else str(name),
+            "fields": {str(k): v for k, v in fields.items()},
+        })
+    return {"defaults": {str(k): v for k, v in defaults.items()},
+            "networks": out}, None
+
+
 def iter_map_fields(entries):
     """Yield (dotted_field, where) for every field of every entry - the hook
     the validators use to run the same ECS gate as rule fields (each field
@@ -413,7 +479,7 @@ class InternalIPMap:
                 print("Internal IP map disabled in config.yaml "
                       "(internal_map.enabled: false)")
                 return
-            rel = block.get("path") or "internal_ips.yaml"
+            rel = block.get("path") or DEFAULT_MAP_PATH
             self._path = rel if os.path.isabs(rel) else os.path.join(base_dir, rel)
             try:
                 self._cache_size = max(

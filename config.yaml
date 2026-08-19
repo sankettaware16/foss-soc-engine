@@ -150,12 +150,13 @@ internal_map:
   # Edits hot-reload within ~10 seconds, no engine restart needed.
   #
   # The map file is YOURS and is .gitignore'd (real network plans never go to
-  # git). Create it with:  cp examples/internal_ips.example.yaml internal_ips.yaml
-  # or from the Web UI "IP Map" tab (edit + validate + test; Save creates it).
-  # Until the file exists this feature simply stays idle.
+  # git). It lives in database/ next to the GeoIP .mmdb files. Create it with:
+  #   cp examples/internal_ips.example.yaml database/internal_ips.yaml
+  # or from the Web UI "IP Map" tab (visual editor + validation + test
+  # lookups; Save creates it). Until the file exists this feature stays idle.
   enabled: true
   # One YAML file, OR a directory of YAML files (one per building/site).
-  path: "internal_ips.yaml"
+  path: "database/internal_ips.yaml"
 
 geoip:
   # One switch for ALL IP enrichment (geo + ASN). false = skip both lookups.

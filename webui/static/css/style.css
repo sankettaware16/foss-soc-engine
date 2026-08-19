@@ -370,3 +370,34 @@ code { font-family: var(--mono); font-size: 0.9em; padding: 1px 6px; border-radi
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.good { border-color: oklch(0.7 0.14 152 / 0.4); }
 .toast.bad { border-color: oklch(0.6 0.17 25 / 0.4); }
+
+/* internal IP map — visual editor */
+.ipmap-form {
+  border: 1px solid var(--stroke); border-radius: var(--radius-sm);
+  background: var(--glass-soft); padding: 16px 18px; margin: 10px 0 14px;
+}
+.ipm-form-h { font-size: 13.5px; font-weight: 600; margin: 0 0 12px; color: var(--txt); }
+.ipm-flabel { display: block; font-size: 12.5px; color: var(--txt-dim); margin: 12px 0 6px; font-weight: 500; }
+.ipm-frow { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.ipm-frow .ipm-fkey { flex: 0 0 220px; font-family: var(--mono, monospace); font-size: 12.5px; }
+.ipm-frow .ipm-fval { flex: 1; }
+.ipm-frow .ipm-fdel { flex: 0 0 auto; }
+.ipm-ecs { flex: 0 0 110px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.ipm-ecs.good { color: var(--good, oklch(0.55 0.13 152)); }
+.ipm-ecs.warn { color: oklch(0.6 0.12 75); }
+.ipm-ecs.bad { color: var(--bad, oklch(0.55 0.17 25)); }
+.ipm-badge { display: inline-block; margin-top: 5px; font-size: 11.5px; font-weight: 600; min-height: 14px; }
+.ipm-badge.good { color: var(--good, oklch(0.55 0.13 152)); }
+.ipm-badge.bad { color: var(--bad, oklch(0.55 0.17 25)); }
+.ipm-chip {
+  display: inline-block; font-size: 11px; padding: 3px 9px; margin: 1px 0;
+  border-radius: 999px; border: 1px solid var(--stroke-soft);
+  background: var(--glass-strong); color: var(--txt-dim); white-space: nowrap;
+}
+.ipm-chip b { color: var(--txt); font-weight: 600; }
+.ipm-defsum { margin: 0 0 10px; line-height: 2; }
+.ipmap-tblwrap { max-height: 520px; overflow-y: auto; }
+.ipm-ranges { font-family: var(--mono, monospace); font-size: 12px; white-space: nowrap; }
+.ipm-fields { line-height: 1.9; }
+.ipm-actions { text-align: right; white-space: nowrap; }
+.ipm-actions .btn { padding: 5px 9px; font-size: 11.5px; }

@@ -9,7 +9,7 @@ What you get (under  release/FOSS-SOC-UI/ ):
 
     FOSS-SOC-UI.exe      <- double-click to run (no Python needed)
     config.yaml          <- editable
-    internal_ips.yaml    <- editable internal IP map (IP Map tab)
+    database/internal_ips.yaml <- editable internal IP map (IP Map tab)
     rules/               <- editable parser rules
     examples/            <- sample logs
     database/            <- drop GeoLite2-City.mmdb here (optional)
@@ -76,21 +76,21 @@ def assemble():
     if os.path.exists(cfg):
         shutil.copy2(cfg, os.path.join(RELEASE, "config.yaml"))
 
-    # Internal IP map starter (editable next to the exe, like config.yaml).
-    # Always GENERATED, never copied: the repo's internal_ips.yaml is
-    # .gitignore'd site-local data (a builder's real network plan must never
-    # end up inside a distributable).
-    with open(os.path.join(RELEASE, "internal_ips.yaml"), "w",
+    os.makedirs(os.path.join(RELEASE, "database"), exist_ok=True)
+
+    # Internal IP map starter (lives in database/ with the GeoIP files).
+    # Always GENERATED, never copied: the repo's map file is .gitignore'd
+    # site-local data (a builder's real network plan must never end up
+    # inside a distributable).
+    with open(os.path.join(RELEASE, "database", "internal_ips.yaml"), "w",
               encoding="utf-8") as f:
         f.write(
             "# Internal IP map - which of YOUR ranges is which building/room/"
             "lab.\n"
-            "# Edit it in the UI ('IP Map' tab: example template, validation,\n"
+            "# Edit it in the UI ('IP Map' tab: visual editor, validation,\n"
             "# test lookups) or copy examples/internal_ips.example.yaml over\n"
             "# this file. Empty list = feature idle, nothing is enriched.\n"
             "networks: []\n")
-
-    os.makedirs(os.path.join(RELEASE, "database"), exist_ok=True)
     # leave a hint so testers know what goes there
     with open(os.path.join(RELEASE, "database", "PUT-GeoLite2-mmdb-FILES-HERE.txt"),
               "w", encoding="utf-8") as f:

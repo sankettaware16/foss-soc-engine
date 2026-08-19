@@ -130,7 +130,7 @@ Both are switched by `geoip.enabled` in `config.yaml`. A missing library or
 database means enrichment is quietly skipped, never a crash.
 
 **Internal IPs** get the same treatment from the operator's own knowledge
-(`internal_map:` in `config.yaml` → `internal_ips.yaml`): declared
+(`internal_map:` in `config.yaml` → `database/internal_ips.yaml`): declared
 subnets/ranges carry fields like `geo.name` and `site.building`/`site.room`,
 merged under the matching `source.`/`destination.` endpoint. Overlapping
 ranges are flattened **once at load time** into disjoint, pre-merged segments

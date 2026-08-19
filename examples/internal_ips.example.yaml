@@ -5,10 +5,11 @@
 # address space). All names/ranges below are fictional — replace them with
 # your organization's real allocation table.
 #
-# To use it:  cp examples/internal_ips.example.yaml internal_ips.yaml
-# (or create/edit the map in the Web UI's "IP Map" tab), then edit freely —
-# the running engine hot-reloads it within ~10 s. internal_ips.yaml is
-# .gitignore'd: your real network plan stays on your machines, never in git.
+# To use it:  cp examples/internal_ips.example.yaml database/internal_ips.yaml
+# (or build the map in the Web UI's "IP Map" tab — a visual editor with
+# add/edit/delete and per-field ECS checking), then edit freely — the running
+# engine hot-reloads it within ~10 s. The map lives in database/ next to the
+# GeoIP files and is .gitignore'd: your real network plan never goes to git.
 #
 # Every event whose source/destination IP falls in a range below gets the
 # entry's fields, e.g.:
