@@ -107,7 +107,7 @@ Sign out any time with the button in the top-right. For local development only,
 you can disable the login entirely with `SOC_UI_NO_AUTH=1`.
 
 > The login travels over plain HTTP, so use the console on a trusted network
-> (see §12). For wider exposure, put it behind an HTTPS reverse proxy.
+> (see §13). For wider exposure, put it behind an HTTPS reverse proxy.
 
 ---
 
@@ -122,6 +122,7 @@ The left sidebar sections:
 | **Test Log**   | The main tool. Paste log lines or upload a file, choose a parser, and see the parsed result. |
 | **Rules**      | View, edit, create and delete parser rules — with live ECS field checking. |
 | **Config**     | Edit `config.yaml` and validate it before going live. |
+| **IP Map**     | Like GeoIP for **your own** network: declare which internal range is which building/room/lab, and matching events are enriched with those fields. |
 | **ECS Helper** | Look up the correct field name for anything ("country", "http status"…) or autocorrect a wrong one. |
 | **Preflight**  | When you're ready to connect to the real Kafka/Redis pipeline, run the readiness checks. |
 | **Benchmark**  | Measure what this machine can parse (EPS, latency, utilization %), check the pipeline is real-time, or replay how it handled a past traffic spike. |
@@ -268,7 +269,52 @@ fine to start with (e.g. an output folder that doesn't exist yet).
 
 ---
 
-## 7. ECS Helper (field name lookup)
+## 7. IP Map — teach the engine your own network
+
+Public IPs get GeoIP enrichment automatically; the **IP Map** tab does the same
+for the addresses only your organization knows. If your IT team keeps a
+spreadsheet like "room 101 = 10.10.1.1–10, gateway .250", this is where that
+knowledge becomes searchable fields on every event.
+
+1. Click **IP Map**, then **Insert example** to start from a filled-in template.
+2. Replace the example ranges with your own. Every entry is just:
+
+   ```yaml
+   - range: 10.10.4.0/24             # CIDR, 10.0.0.1-99, full range, or single IP
+     name: "Teaching lab 1"          # becomes source.geo.name / destination.geo.name
+     fields:                         # anything else you want on matching events
+       site.building: "Engineering Building"
+       site.room: "B03"
+   ```
+
+3. **Validate** shows problems instantly (bad ranges, misspelled keys, wrong
+   ECS names). **Save** applies it — the running engine reloads it within
+   ~10 seconds, no restart.
+4. Use **Try an IP** to check your work: type any address and see exactly the
+   fields its events will carry.
+
+> Your map stays **local**: `internal_ips.yaml` is `.gitignore`d, so your real
+> network plan is never committed or published, and updating the engine with
+> `git pull` never touches it.
+
+Useful tricks:
+
+- **Layering.** Declare a whole `/24` with the building's fields, then narrower
+  room ranges inside it. A matching IP gets the building fields **plus** the
+  room fields (the more specific range wins any conflict).
+- **One room, several ranges.** `ranges: [10.10.2.11-15, 10.10.9.1-5]`.
+- **Per-file defaults.** A `defaults:` block at the top adds fields (e.g.
+  `site.organization`) to every entry in that file.
+- **One file per building.** Point `internal_map.path` in `config.yaml` at a
+  *folder* and the tab grows a file selector with **+ New file** / **Delete**.
+
+In Kibana/Elasticsearch you can then filter and aggregate on
+`source.geo.name`, `source.site.building`, `source.site.room`, … — "top talkers
+by room", "all failed logins from the server room", and so on.
+
+---
+
+## 8. ECS Helper (field name lookup)
 
 Not sure what to call a field? Click **ECS Helper**.
 
@@ -281,7 +327,7 @@ Use this while writing a rule so your fields are correct the first time.
 
 ---
 
-## 8. Preflight (only when connecting the real pipeline)
+## 9. Preflight (only when connecting the real pipeline)
 
 The Web UI is mainly for **local testing**, which needs nothing but the app
 itself. When you're ready to point it at a live **Kafka** cluster (and **Redis**
@@ -298,7 +344,7 @@ down means it's safe to start the engine itself (`python main.py`).
 
 ---
 
-## 9. Benchmark (how fast is my setup, and is it keeping up?)
+## 10. Benchmark (how fast is my setup, and is it keeping up?)
 
 Click **Benchmark**. Three tools, one page — results appear in the box below
 them:
@@ -326,7 +372,7 @@ so the numbers in the browser and the terminal always agree.
 
 ---
 
-## 10. What works without extra software
+## 11. What works without extra software
 
 The console is built to **never crash on a missing dependency**:
 
@@ -343,7 +389,7 @@ and add Redis/GeoIP/Kafka later only when you actually go live.
 
 ---
 
-## 11. Changing the port or stopping it
+## 12. Changing the port or stopping it
 
 - **Port:** set an environment variable before launching:
   `SOC_UI_PORT=9000`. (Default is `8600`.)
@@ -354,7 +400,7 @@ and add Redis/GeoIP/Kafka later only when you actually go live.
 
 ---
 
-## 12. Run it on an Ubuntu server & open it over the network
+## 13. Run it on an Ubuntu server & open it over the network
 
 By default the console only answers on the machine it runs on (`127.0.0.1`).
 To reach it from other computers, bind it to **all interfaces** with
@@ -437,7 +483,7 @@ reboots, and restarts itself if it crashes.
 
 ---
 
-## 13. Quick troubleshooting
+## 14. Quick troubleshooting
 
 - **Browser didn't open** → manually visit http://127.0.0.1:8600
 - **"Port already in use"** → something is already on 8600; relaunch with

@@ -95,6 +95,56 @@ Databases and licensing: [installation.md](installation.md#geoip--asn-database-r
 A missing file or library never crashes the engine — enrichment is skipped and
 `preflight.py` warns.
 
+## Internal IP map (enrich your own address space)
+
+GeoIP knows nothing about `10.x.x.x` — but you do. Describe your allocation
+plan once and matching source/destination IPs are enriched with it:
+
+```yaml
+internal_map:
+  enabled: true
+  path: "internal_ips.yaml"   # one YAML file, OR a directory (one per building)
+```
+
+The map file is **yours**, not the repository's: `internal_ips.yaml` is
+`.gitignore`d so your real network plan never leaves your machines and
+`git pull` never touches it. Create it by copying the worked example
+(`cp examples/internal_ips.example.yaml internal_ips.yaml`) or straight from
+the Web UI's *IP Map* tab (Save creates it). Fictional sample:
+
+```yaml
+defaults:                          # optional: added to every entry in this file
+  site.organization: "Example University"
+networks:
+  - range: 10.10.1.0/24            # CIDR · 10.0.0.1-99 · full range · single IP
+    name: "Engineering 1st floor"  # → geo.name (real ECS, shows next to GeoIP data)
+    fields:                        # anything else, nested under source./destination.
+      site.building: "Engineering Building"
+      site.floor: "1"
+  - range: 10.10.1.1-10            # narrower range INSIDE the /24: a match gets
+    name: "Class room 1 (101)"     # the floor fields PLUS these — the more
+    fields:                        # specific range wins conflicts
+      site.room: "101"
+  - ranges: [10.10.2.11-15, 10.10.9.1-5]   # one entry, several ranges
+    name: "Faculty office 108"
+```
+
+Semantics and guarantees:
+
+- **Both directions**, same as GeoIP: `source.ip` and `destination.ip`.
+- **Overlaps merge, most-specific wins** (equal spans: the later definition
+  wins). All overlap resolution happens **once at load time** — the per-event
+  cost is an LRU cache hit (~0.07 µs) or one binary search (~0.7 µs), measured
+  at under 1 % engine throughput even with a 5,000-entry map; the block absent
+  or `enabled: false` costs one boolean check.
+- **Hot reload**: file edits (including from the Web UI's *IP Map* tab) apply
+  to running workers within ~10 s; a broken edit keeps the previous working
+  version loaded, like rule files.
+- **Validated** by `test_config.py` / `preflight.py` / the UI: range syntax,
+  misspelled keys, and the same ECS field gate as rules (`name:` lands on the
+  real ECS `geo.name`; custom fields like `site.room` are allowed).
+- IPv6 works (CIDR / full ranges / single addresses).
+
 ## Redis (stateful rules)
 
 Required only when any rule uses `strategy: stateful`. Defaults to localhost;

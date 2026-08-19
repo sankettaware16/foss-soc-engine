@@ -1,0 +1,89 @@
+# ============================================================================
+# Worked example of an internal IP map. An IT team usually keeps exactly this
+# knowledge in spreadsheets — floor, room, IP range, owner. Written here as
+# YAML, the engine turns it into per-event enrichment (GeoIP for your OWN
+# address space). All names/ranges below are fictional — replace them with
+# your organization's real allocation table.
+#
+# To use it:  cp examples/internal_ips.example.yaml internal_ips.yaml
+# (or create/edit the map in the Web UI's "IP Map" tab), then edit freely —
+# the running engine hot-reloads it within ~10 s. internal_ips.yaml is
+# .gitignore'd: your real network plan stays on your machines, never in git.
+#
+# Every event whose source/destination IP falls in a range below gets the
+# entry's fields, e.g.:
+#   source.geo.name:      "Teaching lab 1 (B03)"
+#   source.site.building: "Engineering Building"
+#   source.site.room:     "B03"
+# ============================================================================
+
+# Added to every entry in THIS file (an entry's own fields win on conflict).
+defaults:
+  site.organization: "Example University"
+
+networks:
+  # -- Layering: a broad entry for the whole floor... -------------------------
+  - range: 10.10.1.0/24
+    name: "Engineering 1st floor - classrooms"
+    fields:
+      site.building: "Engineering Building"
+      site.floor: "1"
+
+  # ...and narrower room ranges inside it. A match gets the floor fields PLUS
+  # these (more specific range wins conflicts - here geo.name and site.room).
+  - range: 10.10.1.1-10          # short range: last octet only
+    name: "Class room 1 (101)"
+    fields:
+      site.room: "101"
+
+  - range: 10.10.1.11-20
+    name: "Class room 2 (102)"
+    fields:
+      site.room: "102"
+
+  # -- A whole subnet as one room (CIDR) --------------------------------------
+  - range: 10.10.4.0/24
+    name: "Teaching lab 1 (B03)"
+    fields:
+      site.building: "Engineering Building"
+      site.floor: "basement"
+      site.room: "B03"
+      site.type: "teaching-lab"
+
+  # -- One room, several disjoint ranges (ranges: list) -----------------------
+  - ranges: [10.10.2.11-15, 10.10.9.1-5]
+    name: "Faculty office 108"
+    fields:
+      site.building: "Engineering Building"
+      site.floor: "1"
+      site.room: "108"
+      site.type: "faculty-office"
+
+  - ranges: [10.10.100.1-255, 10.10.101.1-255]
+    name: "Server room (113)"
+    fields:
+      site.building: "Engineering Building"
+      site.room: "113"
+      site.type: "server-room"
+
+  # -- Full range syntax (start-end written out) -------------------------------
+  - range: 10.10.3.1-10.10.3.255
+    name: "Research lab (117)"
+    fields:
+      site.building: "Engineering Building"
+      site.floor: "1"
+      site.room: "117"
+      site.type: "research-lab"
+
+  # -- Another building in the same file ---------------------------------------
+  - range: 10.20.5.1-127
+    name: "Library ground floor lab"
+    fields:
+      site.building: "Library Building"
+      site.floor: "ground"
+
+  # -- A single important host --------------------------------------------------
+  - range: 10.10.0.53
+    name: "Campus DNS resolver"
+    fields:
+      site.type: "infrastructure"

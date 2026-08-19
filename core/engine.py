@@ -5,6 +5,7 @@ import ipaddress
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from utils.geoip import GeoIPClient
+from utils.internal_map import InternalIPMap
 from utils import fastjson
 from core.timeparse import parse_timestamp
 
@@ -152,6 +153,21 @@ _VAR_TOKEN = re.compile(r'%\{([A-Za-z_][A-Za-z0-9_]*)\}')
 _HOSTNAME_RE = re.compile(r'[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?')
 
 
+def _merge_enrichment(base, extra):
+    """Merge one enrichment dict into another, returning a NEW dict at every
+    level that conflicts. Both inputs are shared cache objects (the geoip LRU
+    entries / the internal-map segment payloads) reused across events, so they
+    must never be mutated in place."""
+    out = dict(base)
+    for k, v in extra.items():
+        cur = out.get(k)
+        if isinstance(cur, dict) and isinstance(v, dict):
+            out[k] = _merge_enrichment(cur, v)
+        else:
+            out[k] = v
+    return out
+
+
 def substitute_vars(rule_config):
     """Resolve the optional top-level `vars:` block of a rule.
 
@@ -212,6 +228,10 @@ def substitute_vars(rule_config):
 class UniversalEngine:
     def __init__(self, rule_config, include_original=True):
         self.geoip = GeoIPClient()
+        # Operator-defined internal ranges (config.yaml `internal_map:`) -
+        # the in-house counterpart of GeoIP. Singleton per process; when the
+        # block is absent/disabled every enrich() call is one boolean check.
+        self.intmap = InternalIPMap()
         self.disabled = False
         self.last_redis_error = None
         # True iff the LAST process() call stored stateful transaction state
@@ -450,6 +470,20 @@ class UniversalEngine:
             asn = self.geoip.enrich_asn(ip)
             if asn:
                 event[side]['as'] = asn
+            # Internal IP map: the operator's own allocation knowledge
+            # (building, room, owner - config.yaml `internal_map:`), nested
+            # under the same endpoint. Overlap/specificity was resolved at
+            # load time; here a match is one prebuilt dict. On the rare key
+            # collision (e.g. geo.* on an IP the public lookups also knew)
+            # the merge builds fresh dicts so the shared caches stay intact.
+            info = self.intmap.enrich(ip)
+            if info:
+                for key, val in info.items():
+                    cur = ep.get(key)
+                    if isinstance(cur, dict) and isinstance(val, dict):
+                        ep[key] = _merge_enrichment(cur, val)
+                    else:
+                        ep[key] = val
         return event
 
     def _process_stateless(self, log_input):

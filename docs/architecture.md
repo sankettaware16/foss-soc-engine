@@ -129,6 +129,17 @@ no per-lookup network calls), with per-process LRU caching:
 Both are switched by `geoip.enabled` in `config.yaml`. A missing library or
 database means enrichment is quietly skipped, never a crash.
 
+**Internal IPs** get the same treatment from the operator's own knowledge
+(`internal_map:` in `config.yaml` → `internal_ips.yaml`): declared
+subnets/ranges carry fields like `geo.name` and `site.building`/`site.room`,
+merged under the matching `source.`/`destination.` endpoint. Overlapping
+ranges are flattened **once at load time** into disjoint, pre-merged segments
+(most-specific range wins), so the hot path is an LRU hit or a single binary
+search — and one boolean check when the feature is off. `utils/internal_map.py`
+watches the file(s) registry-style: edits hot-reload in ~10 s and a broken edit
+keeps the previous working version. Both directions are enriched, exactly like
+GeoIP. See [configuration.md](configuration.md#internal-ip-map-enrich-your-own-address-space).
+
 ## Output and resilience
 
 - Batched, per-worker NDJSON writers; Kafka offsets are committed **only after**

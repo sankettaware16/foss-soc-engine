@@ -38,5 +38,10 @@ dump.rdb
 # GeoIP database (license restricted)
 database/*.mmdb
 
+# Internal IP map (site-local operator data: real subnets, buildings, rooms —
+# never publish; create from examples/internal_ips.example.yaml or the Web UI)
+internal_ips.yaml
+internal_ips/
+
 # OS noise
 .DS_Store

@@ -20,6 +20,19 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Internal IP map enrichment** — GeoIP for your own address space. A plain
+  YAML file (`internal_ips.yaml`, or a directory of files; config block
+  `internal_map:`) declares which subnet/range/IP is which building, room, lab
+  or owner, and matching `source.ip`/`destination.ip` values are enriched with
+  those fields (`geo.name` + custom `site.*`). Range syntax: CIDR,
+  `a.b.c.d-a.b.c.d`, short `a.b.c.d-N`, single IPs, lists; overlapping ranges
+  layer with most-specific-wins, resolved once at load into binary-searchable
+  segments with an LRU in front (<1 % throughput cost at 5,000 entries; one
+  boolean when disabled). Hot-reloads on edit with registry-style fail-safe;
+  validated by `test_config.py`/`preflight.py` (ranges + the ECS field gate);
+  new Web UI **IP Map** tab to edit, validate and test-look-up IPs; new
+  regression suite `test_internal_map.py`. Ships disabled-by-content (empty
+  starter map) with a worked example in `examples/internal_ips.example.yaml`.
 - Community health files: contributing guide, security policy, code of conduct,
   issue templates, and a pull request template.
 - Component roadmap (`docs/roadmap.md`).

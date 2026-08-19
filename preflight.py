@@ -9,11 +9,12 @@ It validates everything that can stop the engine from working, in one shot:
   3. rules load and their regexes compile
   4. every rule field is valid ECS (uses ecs_helper / ecs_schema)
   5. program_mapping points at rules that exist
-  6. the Kafka host:port is actually reachable from THIS server (raw TCP)
-  7. the broker really speaks Kafka, and the topics you configured exist
+  6. the internal IP map parses (ranges valid, fields pass the ECS gate)
+  7. the Kafka host:port is actually reachable from THIS server (raw TCP)
+  8. the broker really speaks Kafka, and the topics you configured exist
      (with their partition counts)
-  8. Redis is reachable (only required if you use any 'stateful' rule)
-  9. you have enough Kafka partitions for the number of workers
+  9. Redis is reachable (only required if you use any 'stateful' rule)
+ 10. you have enough Kafka partitions for the number of workers
 
 Usage:
   python3 preflight.py                 # full check using config.yaml
@@ -261,21 +262,25 @@ def main():
     e, w = tc.validate_program_mapping(config, rules); errors += e; warnings += w
     ok_if_silent(e, w)
 
+    section("6. Internal IP map")
+    e, w = tc.validate_internal_map(base_dir, config); errors += e; warnings += w
+    ok_if_silent(e, w)
+
     part_counts = {}
     if args.skip_live:
-        section("6-9. Live checks")
+        section("7-10. Live checks")
         tc.report("INFO", "skipped (--skip-live)")
     else:
-        section("6. Network reachability (TCP)")
+        section("7. Network reachability (TCP)")
         errors += check_network(config, args.timeout)
 
-        section("7. Kafka broker & topics")
+        section("8. Kafka broker & topics")
         e, part_counts = check_kafka(config, args.timeout); errors += e
 
-        section("8. Redis (for stateful rules)")
+        section("9. Redis (for stateful rules)")
         errors += check_redis(config, rules, args.timeout)
 
-        section("9. Workers vs partitions")
+        section("10. Workers vs partitions")
         check_workers_vs_partitions(config, part_counts)
 
     print("\n" + "=" * 60)

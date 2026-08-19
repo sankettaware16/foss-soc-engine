@@ -74,6 +74,10 @@ from flask import (  # noqa: E402
 from core.engine import UniversalEngine  # noqa: E402
 from core.schema import LogInput  # noqa: E402
 from core import ecs_schema  # noqa: E402
+from utils.internal_map import (  # noqa: E402
+    InternalIPMap, load_map_files, load_map_text, resolve_map_files,
+    iter_map_fields,
+)
 import test_config as tc  # noqa: E402
 
 # Optional-availability probes (used by the dashboard banners).
@@ -608,10 +612,23 @@ def api_health():
         "capabilities": {
             "redis": REDIS_OK,
             "geoip": GEOIP_LIB_OK,
+            "internal_map": _internal_map_ready(),
             "orjson": ORJSON_OK,
             "kafka": KAFKA_LIB_OK,
         },
     })
+
+
+def _internal_map_ready():
+    """True when the internal IP map is enabled AND has at least one entry."""
+    try:
+        block, path = internal_map_settings()
+        if not block or not block.get("enabled", True):
+            return False
+        entries, _, _ = load_map_files(resolve_map_files(path))
+        return len(entries) > 0
+    except Exception:
+        return False
 
 
 def _strategy_breakdown(meta):
@@ -758,8 +775,178 @@ def api_config_validate():
         e, w, rules = tc.validate_rules(DATA_ROOT, cfg); summary["errors"] += e; summary["warnings"] += w
         e, w = tc.validate_program_mapping(cfg, rules); summary["errors"] += e; summary["warnings"] += w
         e, w = tc.validate_ecs_fields(rules); summary["errors"] += e; summary["warnings"] += w
+        e, w = tc.validate_internal_map(DATA_ROOT, cfg); summary["errors"] += e; summary["warnings"] += w
     summary["passed"] = summary["errors"] == 0
     return jsonify({"summary": summary, "lines": parse_report_lines(buf.getvalue())})
+
+
+# ---- Internal IP map (config.yaml `internal_map:`) ------------------------- #
+def internal_map_settings():
+    """(block, absolute path) for the internal IP map. The path may be one
+    YAML file or a directory of them (one per building/site)."""
+    block = load_config().get("internal_map") or {}
+    rel = block.get("path") or "internal_ips.yaml"
+    path = rel if os.path.isabs(rel) else os.path.join(DATA_ROOT, rel)
+    return block, path
+
+
+def _ipmap_ecs(entries):
+    """Same ECS gate as test_config.validate_internal_map: map fields land
+    under source./destination., so 'geo.name' is judged as 'source.geo.name'."""
+    problems, customs = [], []
+    for field, where in iter_map_fields(entries):
+        status, sug = ecs_schema.classify(f"source.{field}")
+        if status in ("alias", "typo"):
+            fix = sug or ""
+            if fix.startswith("source."):
+                fix = fix[len("source."):]
+            problems.append({"field": field, "fix": fix, "loc": where})
+        elif status == "custom":
+            customs.append({"field": field, "loc": where})
+    return problems, customs
+
+
+def _safe_map_file(path, filename, is_dir):
+    """Which file to read/write: THE map file, or <filename> inside the map
+    directory (same name rules as rule files)."""
+    if not is_dir:
+        return path, None
+    fname = os.path.basename(filename or "")
+    if not fname.endswith((".yaml", ".yml")):
+        return None, "filename must end with .yaml"
+    if not re.match(r"^[A-Za-z0-9_.-]+$", fname):
+        return None, "filename may only contain letters, numbers, _ . -"
+    return os.path.join(path, fname), None
+
+
+@app.route("/api/ipmap")
+def api_ipmap():
+    block, path = internal_map_settings()
+    configured = bool(block)
+    enabled = bool(block.get("enabled", True)) if configured else False
+    is_dir = os.path.isdir(path)
+    files = resolve_map_files(path)
+    entries, errors, warnings = load_map_files(files)
+    problems, customs = _ipmap_ecs(entries)
+    disp = path
+    if disp.startswith(DATA_ROOT):
+        disp = os.path.relpath(disp, DATA_ROOT)
+    return jsonify({
+        "configured": configured,
+        "enabled": enabled,
+        "path": disp,
+        "is_dir": is_dir,
+        "files": [os.path.basename(f) for f in files],
+        "entries": len(entries),
+        "errors": errors,
+        "warnings": warnings,
+        "ecs_problems": problems,
+        "customs": customs,
+    })
+
+
+@app.route("/api/ipmap/file")
+def api_ipmap_file():
+    _, path = internal_map_settings()
+    target, err = _safe_map_file(path, request.args.get("name", ""),
+                                 os.path.isdir(path))
+    if err:
+        return jsonify({"error": err}), 400
+    if not os.path.isfile(target):
+        # Single-file mode where the file does not exist yet: the editor
+        # opens empty and Save will create it.
+        return jsonify({"filename": os.path.basename(target),
+                        "content": "", "found": False})
+    with open(target, "r", encoding="utf-8") as f:
+        return jsonify({"filename": os.path.basename(target),
+                        "content": f.read(), "found": True})
+
+
+@app.route("/api/ipmap/save", methods=["POST"])
+def api_ipmap_save():
+    body = request.get_json(force=True, silent=True) or {}
+    _, path = internal_map_settings()
+    target, err = _safe_map_file(path, body.get("filename", ""),
+                                 os.path.isdir(path))
+    if err:
+        return jsonify({"error": err}), 400
+    content = body.get("content", "")
+    entries, errors, warnings = load_map_text(
+        content, label=os.path.basename(target))
+    # Same contract as saving a rule: refuse only hard YAML breakage;
+    # entry-level problems are saved AND reported so nothing typed is lost.
+    if any("YAML syntax error" in e for e in errors):
+        return jsonify({"error": errors[0]}), 400
+    parent = os.path.dirname(target)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(content)
+    problems, customs = _ipmap_ecs(entries)
+    try:
+        # The UI's own engine instances reflect the edit immediately;
+        # the running engine's workers pick it up via their 10s watcher.
+        InternalIPMap.refresh()
+    except Exception:
+        pass
+    return jsonify({"saved": os.path.basename(target), "entries": len(entries),
+                    "errors": errors, "warnings": warnings,
+                    "ecs_problems": problems, "customs": customs})
+
+
+@app.route("/api/ipmap/validate", methods=["POST"])
+def api_ipmap_validate():
+    body = request.get_json(force=True, silent=True) or {}
+    entries, errors, warnings = load_map_text(
+        body.get("content", ""), label="(editor)")
+    problems, customs = _ipmap_ecs(entries)
+    return jsonify({"entries": len(entries), "errors": errors,
+                    "warnings": warnings, "ecs_problems": problems,
+                    "customs": customs})
+
+
+@app.route("/api/ipmap/delete", methods=["POST"])
+def api_ipmap_delete():
+    body = request.get_json(force=True, silent=True) or {}
+    _, path = internal_map_settings()
+    if not os.path.isdir(path):
+        return jsonify({"error": "internal_map.path is a single file - edit "
+                        "it (or empty its networks list) instead of deleting"}), 400
+    target, err = _safe_map_file(path, body.get("filename", ""), True)
+    if err:
+        return jsonify({"error": err}), 400
+    if not os.path.isfile(target):
+        return jsonify({"error": "not found"}), 404
+    os.remove(target)
+    try:
+        InternalIPMap.refresh()
+    except Exception:
+        pass
+    return jsonify({"deleted": os.path.basename(target)})
+
+
+@app.route("/api/ipmap/lookup", methods=["POST"])
+def api_ipmap_lookup():
+    import ipaddress
+    body = request.get_json(force=True, silent=True) or {}
+    ip = str(body.get("ip", "")).strip()
+    if not ip:
+        return jsonify({"error": "ip is required"}), 400
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return jsonify({"error": f"'{ip}' is not a valid IP address"}), 400
+    try:
+        InternalIPMap.refresh()  # pick up saves made since the UI started
+    except Exception:
+        pass
+    m = InternalIPMap()
+    st = m.status()
+    fields = m.enrich(ip)
+    return jsonify({"ip": ip, "match": fields,
+                    "as_event": {"source": fields} if fields else None,
+                    "enabled": st["enabled"], "active": st["active"],
+                    "entries": st["entries"]})
 
 
 # ---- ECS helper ----------------------------------------------------------- #
@@ -829,17 +1016,19 @@ def api_preflight():
         e, _ = tc.validate_ecs_fields(rules); errors += e
         print("=== 5. Program mapping ===")
         e, _ = tc.validate_program_mapping(cfg, rules); errors += e
+        print("=== 6. Internal IP map ===")
+        e, _ = tc.validate_internal_map(DATA_ROOT, cfg); errors += e
         if skip_live:
-            print("=== 6-9. Live checks ===")
+            print("=== 7-10. Live checks ===")
             print("[INFO] skipped (live checks disabled)")
         else:
-            print("=== 6. Network reachability (TCP) ===")
+            print("=== 7. Network reachability (TCP) ===")
             errors += pf.check_network(cfg, timeout)
-            print("=== 7. Kafka broker & topics ===")
+            print("=== 8. Kafka broker & topics ===")
             e, part_counts = pf.check_kafka(cfg, timeout); errors += e
-            print("=== 8. Redis (for stateful rules) ===")
+            print("=== 9. Redis (for stateful rules) ===")
             errors += pf.check_redis(cfg, rules, timeout)
-            print("=== 9. Workers vs partitions ===")
+            print("=== 10. Workers vs partitions ===")
             pf.check_workers_vs_partitions(cfg, part_counts)
 
     return jsonify({

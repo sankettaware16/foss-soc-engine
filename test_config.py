@@ -9,6 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core import ecs_schema
 from core.engine import substitute_vars
 from core.timeparse import parse_offset
+from utils.internal_map import (load_map_files, resolve_map_files,
+                                iter_map_fields)
 
 # Named formats known to core/timeparse.py; anything containing '%' is treated
 # as an explicit strptime format string.
@@ -167,6 +169,23 @@ def validate_config_shape(config):
                     except (TypeError, ValueError):
                         report("ERROR", f"redis.{key} must be an integer")
                         errors += 1
+
+    # optional internal_map: block (internal IP enrichment)
+    im = config.get("internal_map")
+    if im is not None:
+        if not isinstance(im, dict):
+            report("ERROR", "internal_map section must be a mapping (enabled/path)")
+            errors += 1
+        else:
+            if "path" in im and not isinstance(im.get("path"), str):
+                report("ERROR", "internal_map.path must be a file or directory path")
+                errors += 1
+            if "cache_size" in im:
+                try:
+                    int(im["cache_size"])
+                except (TypeError, ValueError):
+                    report("ERROR", "internal_map.cache_size must be an integer")
+                    errors += 1
 
     return errors, warnings
 
@@ -531,6 +550,60 @@ def validate_ecs_fields(rules):
     return errors, 0
 
 
+def validate_internal_map(base_dir, config):
+    """Validate the optional internal IP map (config `internal_map:` block):
+    every map file parses, every range is a valid CIDR/range/IP, and every
+    field passes the same ECS gate as rule fields (map fields land under
+    source./destination., so 'geo.name' is checked as 'source.geo.name';
+    genuine custom fields like site.building are allowed)."""
+    errors = 0
+    warnings = 0
+
+    block = config.get("internal_map")
+    if not isinstance(block, dict) or not block:
+        return 0, 0
+    if not block.get("enabled", True):
+        report("INFO", "internal_map is disabled (internal_map.enabled: false)")
+        return 0, 0
+
+    path = resolve_path(base_dir, block.get("path") or "internal_ips.yaml")
+    files = resolve_map_files(path)
+    if not files:
+        report("WARN", f"internal_map file/directory not found: {path} - "
+                       "internal IP enrichment stays idle (create it from "
+                       "examples/internal_ips.example.yaml or the Web UI "
+                       "IP Map tab)")
+        return 0, 1
+
+    entries, errs, warns = load_map_files(files)
+    for msg in errs:
+        report("ERROR", f"internal_map: {msg}")
+        errors += 1
+    for msg in warns:
+        report("WARN", f"internal_map: {msg}")
+        warnings += 1
+
+    custom = 0
+    for field, where in iter_map_fields(entries):
+        status, suggestion = ecs_schema.classify(f"source.{field}")
+        if status in ("alias", "typo"):
+            fix = suggestion or ""
+            if fix.startswith("source."):
+                fix = fix[len("source."):]
+            report("ERROR", f"internal_map {where}: field '{field}' is not "
+                            f"ECS - use '{fix}'")
+            errors += 1
+        elif status == "custom":
+            custom += 1
+    if custom:
+        report("INFO", f"internal_map: {custom} custom (non-ECS) field(s) allowed")
+
+    if not errors:
+        report("OK", f"internal_map: {len(entries)} entries loaded from "
+                     f"{len(files)} file(s)")
+    return errors, warnings
+
+
 def validate_kafka(config, timeout_sec):
     errors = 0
     warnings = 0
@@ -623,6 +696,11 @@ def main():
 
     report("INFO", "Validating ECS field compliance")
     errors, warnings = validate_ecs_fields(rules)
+    total_errors += errors
+    total_warnings += warnings
+
+    report("INFO", "Validating internal IP map")
+    errors, warnings = validate_internal_map(base_dir, config)
     total_errors += errors
     total_warnings += warnings
 

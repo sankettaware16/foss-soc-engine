@@ -62,6 +62,15 @@ the source to it in configuration.
   your proxy traffic goes), ambiguous endpoint values are classified from
   `.address` into `.ip`/`.domain` per ECS, and fields MaxMind doesn't know are
   omitted — never emitted as nulls.
+- **Internal IP map** — GeoIP for *your own* address space: declare which subnet
+  or range is which building/room/lab in plain YAML (`internal_ips.yaml`, or a
+  directory of files) and matching events are enriched with those fields
+  (`source.geo.name`, `source.site.*`). Overlapping ranges layer (building +
+  room), resolution is precomputed at load, lookups are LRU-cached, and edits
+  hot-reload — designed to stay invisible at 1M+ EPS. Editable, validatable and
+  testable from the Web UI's **IP Map** tab. The map file is `.gitignore`d —
+  your real network plan stays on your machines (start from
+  `examples/internal_ips.example.yaml`).
 - **No silent data loss** — at-least-once Kafka delivery (offsets committed only
   after durable disk flush), per-source dead-letter queues with storm warnings,
   expired stateful transactions emitted and tagged instead of dropped.
@@ -200,7 +209,8 @@ clock or timezone label is wrong — fix the source, not the engine.
 ├── config.yaml           # Main runtime configuration
 ├── core/                 # Parsing engine (strategies, routing, output, ECS schema)
 ├── rules/                # YAML parsing rules, one per log source
-├── utils/                # GeoIP enrichment, JSON acceleration
+├── internal_ips.yaml     # Internal IP map — yours, .gitignore'd (create from examples/)
+├── utils/                # GeoIP + internal-IP-map enrichment, JSON acceleration
 ├── webui/                # Browser console (Flask)
 ├── elk-plugin/           # Native Kibana plugin + headless backend
 ├── elasticsearch/        # Generated ES index template + loader

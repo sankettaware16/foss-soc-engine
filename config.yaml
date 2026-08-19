@@ -141,6 +141,22 @@ redis:
 #  quantum_sec: 900            # real timezone offsets are :00/:15/:30/:45 multiples
 #  jitter_sec: 120             # how close to a quantum multiple counts as "clean"
 
+internal_map:
+  # GeoIP answers "where in the world is this PUBLIC IP?" - this answers
+  # "what is this INTERNAL IP?" using YOUR OWN allocation table. Describe your
+  # subnets/ranges in the file below (building, room, owner, whatever you
+  # know) and any source/destination IP inside a declared range gets those
+  # fields added to the event - e.g. source.geo.name: "Teaching lab 1".
+  # Edits hot-reload within ~10 seconds, no engine restart needed.
+  #
+  # The map file is YOURS and is .gitignore'd (real network plans never go to
+  # git). Create it with:  cp examples/internal_ips.example.yaml internal_ips.yaml
+  # or from the Web UI "IP Map" tab (edit + validate + test; Save creates it).
+  # Until the file exists this feature simply stays idle.
+  enabled: true
+  # One YAML file, OR a directory of YAML files (one per building/site).
+  path: "internal_ips.yaml"
+
 geoip:
   # One switch for ALL IP enrichment (geo + ASN). false = skip both lookups.
   enabled: true

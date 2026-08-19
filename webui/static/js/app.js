@@ -11,6 +11,7 @@ const VIEW_META = {
   test: ["Test Log", "Run raw logs through any parser and see the ECS output"],
   rules: ["Rules", "View, edit, create and validate parser rules"],
   config: ["Config", "Edit config.yaml and validate it before going live"],
+  ipmap: ["Internal IP Map", "Map your own subnets to buildings & rooms — GeoIP for internal IPs"],
   ecs: ["ECS Helper", "Look up and autocorrect Elastic Common Schema fields"],
   preflight: ["Preflight", "Readiness checks for the live Kafka / Redis pipeline"],
   benchmark: ["Benchmark", "Capacity, live pipeline lag and historical performance"],
@@ -60,6 +61,7 @@ function showView(name) {
   if (name === "dashboard") loadHealth();
   if (name === "rules") loadRules();
   if (name === "config") loadConfig();
+  if (name === "ipmap") loadIpmap();
   if (name === "test") populateParserSelect();
   if (name === "monitor") startMonitor(); else stopMonitor();
 }
@@ -102,15 +104,16 @@ function renderHealth(h) {
     `<span class="chip" title="${r.file}">${esc(r.name)}<span class="strat">${r.strategy}</span></span>`
   ).join("") || '<span class="muted small">No rules loaded.</span>';
 
-  // capability badges
+  // capability badges (3rd element = custom "off" wording)
   const caps = [
     ["Redis (stateful rules)", h.capabilities.redis],
     ["GeoIP enrichment", h.capabilities.geoip],
+    ["Internal IP map", h.capabilities.internal_map, "not set up"],
     ["orjson (speed)", h.capabilities.orjson],
     ["Kafka client", h.capabilities.kafka],
   ];
-  $("#dash-caps").innerHTML = caps.map(([n, on]) =>
-    `<div class="cap"><span>${n}</span><span class="badge ${on ? "on" : "off"}">${on ? "available" : "not installed"}</span></div>`
+  $("#dash-caps").innerHTML = caps.map(([n, on, offText]) =>
+    `<div class="cap"><span>${n}</span><span class="badge ${on ? "on" : "off"}">${on ? "available" : (offText || "not installed")}</span></div>`
   ).join("");
 
   // sidebar pills
@@ -388,6 +391,184 @@ function renderReport(lines) {
     `<div class="logline ${l.level}">${l.level === "SECTION" ? "" : `<span class="lvl">${l.level}</span>`}${esc(l.message)}</div>`
   ).join("");
 }
+
+/* ============================================================== *
+ *  Internal IP map
+ * ============================================================== */
+let IPMAP = null;
+async function loadIpmap() {
+  try {
+    const d = await api("/api/ipmap");
+    IPMAP = d;
+    $("#ipmap-count").textContent = `(${d.entries} entr${d.entries === 1 ? "y" : "ies"})`;
+    const bits = [];
+    if (!d.configured) bits.push("No internal_map: block in config.yaml — add one in the Config tab to enable this feature.");
+    else if (!d.enabled) bits.push("internal_map is disabled in config.yaml (enabled: false).");
+    else bits.push(`Mapping ${d.is_dir ? "folder" : "file"}: ${d.path} — saves reach the running engine within ~10 s, no restart.`);
+    $("#ipmap-status").textContent = bits.join("  ");
+
+    const sel = $("#ipmap-file");
+    const dir = !!d.is_dir;
+    sel.style.display = dir ? "" : "none";
+    $("#ipmap-new").style.display = dir ? "" : "none";
+    $("#ipmap-delete").style.display = dir ? "" : "none";
+    if (dir) {
+      const cur = sel.value;
+      sel.innerHTML = (d.files || []).map((f) => `<option>${esc(f)}</option>`).join("")
+        || '<option value="">(no files yet — use + New file)</option>';
+      if (cur && (d.files || []).includes(cur)) sel.value = cur;
+    }
+    await openIpmapFile();
+    renderIpmapReport(d);
+  } catch (e) { toast(e.message, "bad"); }
+}
+async function openIpmapFile() {
+  const dir = IPMAP && IPMAP.is_dir;
+  const name = dir ? $("#ipmap-file").value : "";
+  if (dir && !name) { $("#ipmap-content").value = ""; return; }
+  try {
+    const d = await api("/api/ipmap/file" + (name ? "?name=" + encodeURIComponent(name) : ""));
+    $("#ipmap-content").value = d.content || "";
+    $("#ipmap-msg").textContent = d.found === false ? "File does not exist yet — Save will create it." : "";
+  } catch (e) { toast(e.message, "bad"); }
+}
+$("#ipmap-file").addEventListener("change", openIpmapFile);
+
+function renderIpmapReport(r) {
+  const out = [];
+  (r.errors || []).forEach((m) => out.push(`<div class="ecs-line bad">✗ ${esc(m)}</div>`));
+  (r.ecs_problems || []).forEach((p) =>
+    out.push(`<div class="ecs-line bad">✗ field <b>${esc(p.field)}</b> → use <b>${esc(p.fix)}</b> <span class="muted">(${esc(p.loc)})</span></div>`));
+  (r.warnings || []).forEach((m) => out.push(`<div class="ecs-line warn">~ ${esc(m)}</div>`));
+  (r.customs || []).forEach((c) =>
+    out.push(`<div class="ecs-line warn">~ ${esc(c.field)} <span class="muted">custom field, allowed (${esc(c.loc)})</span></div>`));
+  const n = r.entries || 0;
+  if (!out.length) {
+    out.push(`<div class="ecs-line good">✓ ${n} entr${n === 1 ? "y" : "ies"} — no problems</div>`);
+  } else if (!(r.errors || []).length && !(r.ecs_problems || []).length) {
+    out.unshift(`<div class="ecs-line good">✓ ${n} entr${n === 1 ? "y" : "ies"} parsed, no errors</div>`);
+  }
+  $("#ipmap-report").innerHTML = out.join("");
+}
+
+$("#ipmap-save").addEventListener("click", async () => {
+  const body = { content: $("#ipmap-content").value };
+  if (IPMAP && IPMAP.is_dir) {
+    body.filename = $("#ipmap-file").value;
+    if (!body.filename) { toast("No file selected — use + New file first", "bad"); return; }
+  }
+  try {
+    const d = await api("/api/ipmap/save", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    toast(`Saved ${d.saved} — live within ~10 s`, "good");
+    $("#ipmap-count").textContent = `(${d.entries} entr${d.entries === 1 ? "y" : "ies"})`;
+    $("#ipmap-msg").textContent = "";
+    renderIpmapReport(d);
+    HEALTH = null;
+  } catch (e) { toast(e.message, "bad"); }
+});
+
+$("#ipmap-validate").addEventListener("click", async () => {
+  try {
+    const d = await api("/api/ipmap/validate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: $("#ipmap-content").value }),
+    });
+    renderIpmapReport(d);
+    const bad = (d.errors || []).length + (d.ecs_problems || []).length;
+    toast(bad ? `${bad} problem(s) — see the report` : "Map is valid", bad ? "bad" : "good");
+  } catch (e) { toast(e.message, "bad"); }
+});
+
+$("#ipmap-example").addEventListener("click", () => {
+  if ($("#ipmap-content").value.trim()
+      && !confirm("Replace the editor contents with the example?")) return;
+  $("#ipmap-content").value = IPMAP_EXAMPLE;
+  toast("Example inserted — edit the ranges/names, then Save");
+});
+
+$("#ipmap-new").addEventListener("click", async () => {
+  const name = prompt("New map file name (e.g. cse_building.yaml):");
+  if (!name) return;
+  try {
+    const d = await api("/api/ipmap/save", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: name, content: IPMAP_EXAMPLE }),
+    });
+    toast("Created " + d.saved, "good");
+    await loadIpmap();
+    $("#ipmap-file").value = d.saved;
+    await openIpmapFile();
+  } catch (e) { toast(e.message, "bad"); }
+});
+
+$("#ipmap-delete").addEventListener("click", async () => {
+  const name = $("#ipmap-file").value;
+  if (!name) return;
+  if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
+  try {
+    await api("/api/ipmap/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: name }),
+    });
+    toast("Deleted " + name, "good");
+    loadIpmap();
+  } catch (e) { toast(e.message, "bad"); }
+});
+
+$("#ipmap-test").addEventListener("click", ipmapLookup);
+$("#ipmap-ip").addEventListener("keydown", (e) => { if (e.key === "Enter") ipmapLookup(); });
+async function ipmapLookup() {
+  const ip = $("#ipmap-ip").value.trim();
+  if (!ip) return;
+  try {
+    const d = await api("/api/ipmap/lookup", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ip }),
+    });
+    if (!d.enabled) {
+      $("#ipmap-test-out").innerHTML =
+        '<div class="ecs-line warn">~ internal_map is not enabled in config.yaml</div>';
+    } else if (!d.match) {
+      $("#ipmap-test-out").innerHTML =
+        `<div class="ecs-line warn">~ ${esc(ip)} matches no declared range — its events keep only GeoIP/ASN (if the IP is public)</div>`;
+    } else {
+      $("#ipmap-test-out").innerHTML =
+        `<div class="ecs-line good">✓ ${esc(ip)} matched — its events get these fields:</div>
+         <div class="event"><pre>${jsonHighlight(d.as_event)}</pre></div>`;
+    }
+  } catch (e) { toast(e.message, "bad"); }
+}
+
+const IPMAP_EXAMPLE = `# Internal IP map — which range is which place. Full syntax: docs/configuration.md
+# range styles:  10.0.0.0/24  ·  10.0.0.1-10.0.0.99  ·  10.0.0.1-99  ·  10.0.0.5
+# (example names/ranges are fictional — replace them with YOUR allocation table)
+defaults:                          # added to every entry in this file
+  site.organization: "My Org"
+
+networks:
+  # Broad entry for the whole floor…
+  - range: 10.10.1.0/24
+    name: "Engineering 1st floor"
+    fields:
+      site.building: "Engineering Building"
+      site.floor: "1"
+
+  # …and narrower room ranges inside it (they inherit the floor's fields;
+  # the more specific range wins any conflict).
+  - range: 10.10.1.1-10
+    name: "Class room 1 (101)"
+    fields:
+      site.room: "101"
+
+  - ranges: [10.10.2.11-15, 10.10.9.1-5]        # one room, several ranges
+    name: "Faculty office 108"
+    fields:
+      site.building: "Engineering Building"
+      site.room: "108"
+`;
 
 /* ============================================================== *
  *  ECS Helper
