@@ -42,3 +42,18 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 - Community health files: contributing guide, security policy, code of conduct,
   issue templates, and a pull request template.
 - Component roadmap (`docs/roadmap.md`).
+
+### Fixed
+
+- **Elasticsearch index template now maps the `destination.*` enrichment
+  side** (`destination.geo.*` incl. `geo_point` location, `destination.as.*`,
+  and `geo.name` on both sides). Previously only `source.*` was declared, so
+  `destination.geo.location` fell to dynamic mapping (object of floats) and
+  could never be used as a Kibana Maps layer for outbound/proxy traffic
+  (squid, modsec, openvas, suricata). Regenerating also picked up
+  `network.bytes` and `squid.forwarded_for`, which were missing from the
+  checked-in template. Existing indices keep the old mapping (field types
+  cannot change in place) — new indices are correct once the updated template
+  is loaded; reindex only if Maps on historical data are needed.
+  ([#8](https://github.com/sankettaware16/foss-soc-engine/pull/8), thanks
+  @HelixY2J)
