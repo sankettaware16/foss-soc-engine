@@ -50,6 +50,14 @@ ENGINE_FIELDS = {
     "source.geo.location": "geo_point",
     "source.as.number": "long",
     "source.as.organization.name": "keyword",
+    "destination.geo.country_name": "keyword",
+    "destination.geo.country_iso_code": "keyword",
+    "destination.geo.city_name": "keyword",
+    "destination.geo.location": "geo_point",
+    "destination.as.number": "long",
+    "destination.as.organization.name": "keyword",
+    "source.geo.name": "keyword",
+    "destination.geo.name": "keyword",
 }
 
 # Exact-name type overrides (ECS-typed or semantically known).
