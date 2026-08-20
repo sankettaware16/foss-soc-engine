@@ -159,9 +159,16 @@ consumer **group**, and the process **PID(s)**. Below that, live panels:
 - **Workers** — one row per worker: PID, its own EPS, events processed, uptime
   and a green/red alive light.
 - **Recent errors / DLQ** — click *Load latest* to see the most recent
-  un-parseable lines and why they failed. On disk each source gets its own
-  dead-letter file (`logs/dlq/nginx.json`, `logs/dlq/postfix.json`, …), capped
-  in size, so one broken source can't fill the disk — and if a source suddenly
+  un-parseable lines and why they failed, **grouped into one folder per
+  source** (`squid`, `nginx`, `postfix`, … — new sources appear
+  automatically). Each folder shows its own recent tail with a breakdown of
+  failure reasons, the on-disk size of that source's dead-letter files, and
+  the newest failure's timestamp; folders are ordered freshest-trouble-first
+  and expand/collapse with a click. That way a storming source (thousands of
+  squid no-matches) can never bury the two nginx lines you actually need.
+  On disk each source gets its own dead-letter file
+  (`logs/dlq/nginx.json`, `logs/dlq/postfix.json`, …), capped in size, so
+  one broken source can't fill the disk — and if a source suddenly
   dead-letters heavily, `engine.log` gets a **"DLQ STORM"** warning naming it.
 
 > **Where the numbers come from.** The running engine writes tiny stats files

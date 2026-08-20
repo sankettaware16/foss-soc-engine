@@ -1470,30 +1470,262 @@ def api_monitor():
     return jsonify(build_monitor())
 
 
+# One bounded read per DLQ file, however large the file has grown: enough
+# for a full tail of long lines, small enough that a 200 MB storm file
+# costs the same as a tiny one.
+_DLQ_TAIL_CHUNK = 256 * 1024
+# Program names come from log metadata, so a hostile log stream can mint
+# unlimited distinct DLQ files. These caps keep one request's disk reads,
+# RAM and response size bounded no matter what lands in logs/dlq/; the
+# response reports what was left out (files_skipped / sources_omitted).
+_DLQ_MAX_FILES = 400
+_DLQ_MAX_SOURCES = 50
+# Entries ship a preview, not the full line - a single raw log line can be
+# hundreds of KB and the client renders at most 300 chars anyway. The full
+# line always stays in the file on disk.
+_DLQ_RAW_PREVIEW = 400
+_DLQ_ERR_PREVIEW = 80
+
+
+# One escalation step when a file's FINAL record alone is bigger than the
+# normal window (one raw log line can be ~1 MB under Kafka's default cap):
+# without it the tail would come back empty and the source would silently
+# vanish from the panel.
+_DLQ_TAIL_CHUNK_MAX = 2 * 1024 * 1024
+
+
+def _dlq_tail_chunk(path, size, window):
+    """Complete-lines tail window of the file, as bytes."""
+    with open(path, "rb") as f:
+        if size > window:
+            f.seek(size - window)
+            chunk = f.read(window)
+            # The seek almost certainly landed mid-line: drop the partial.
+            return chunk.split(b"\n", 1)[1] if b"\n" in chunk else b""
+        return f.read()
+
+
+def _dlq_tail_lines(path, max_lines):
+    """Last max_lines non-empty lines of path, reading a bounded window
+    from its end (never the whole file)."""
+    if max_lines <= 0:
+        return []
+    try:
+        size = os.path.getsize(path)
+        chunk = _dlq_tail_chunk(path, size, _DLQ_TAIL_CHUNK)
+        if not chunk.strip() and size > _DLQ_TAIL_CHUNK:
+            # The whole window sat inside one huge final record. Retry once
+            # with a window that covers any record the engine can produce.
+            chunk = _dlq_tail_chunk(path, size, _DLQ_TAIL_CHUNK_MAX)
+            if not chunk.strip():
+                # Pathological (>2 MiB single record): show its truncated
+                # tail as an unparsed line rather than hiding the source.
+                with open(path, "rb") as f:
+                    f.seek(size - _DLQ_TAIL_CHUNK)
+                    chunk = f.read(_DLQ_TAIL_CHUNK)
+    except OSError:
+        return []
+    # Split on \n ONLY (the byte DlqWriter terminates records with) - NOT
+    # splitlines(), which also breaks on U+2028/U+2029/U+0085 and those can
+    # legitimately appear INSIDE a record's raw field (orjson and the stdlib
+    # fallback both emit them verbatim), shattering one entry into garbage.
+    lines = [ln.strip() for ln in chunk.decode("utf-8", "ignore").split("\n")]
+    return [ln for ln in lines if ln][-max_lines:]
+
+
+def _dlq_program_from_fname(fname):
+    """dlq/<program>[.wN].json[.1] -> <program> (as DlqWriter names files)."""
+    name = re.sub(r"\.json(\.1)?$", "", fname)
+    return re.sub(r"\.w\d+$", "", name) or "unknown"
+
+
 @app.route("/api/monitor/dlq")
 def api_monitor_dlq():
+    """Recent dead-letters grouped per source program — one folder per
+    source, each with its own tail — so a storming source (say squid at
+    thousands of no_match) can never drown the two nginx lines an analyst
+    actually needs. Sources come from the per-source files DlqWriter
+    already writes (logs/dlq/<program>.wN.json + one rotated .json.1,
+    including a rotated file whose live sibling is gone — a source that
+    stormed and then went quiet must not vanish); old flat logs/dlq*.json
+    files are grouped by each entry's program field. Every file is read
+    as a bounded tail, never whole."""
     try:
         n = int(request.args.get("n", 20))
     except (TypeError, ValueError):
         n = 20
-    entries = []
-    # New layout: per-source files under logs/dlq/ ; old layout: logs/dlq*.json
-    paths = sorted(glob.glob(os.path.join(LOG_DIR, "dlq", "*.json"))) + \
-        sorted(glob.glob(os.path.join(LOG_DIR, "dlq*.json")))
-    for d in paths:
+    n = max(1, min(n, 200))
+
+    # program -> {"entries", "bytes", "files", "claimed"}; claimed=True once
+    # a well-formed entry names this program itself (vs a filename-derived
+    # guess for a file whose whole tail was unparseable).
+    groups = {}
+
+    def bucket(program):
+        return groups.setdefault(
+            str(program or "unknown"),
+            {"entries": [], "bytes": 0, "files": 0, "claimed": False})
+
+    def ts_key(e):
+        # An entry with no timestamp is a torn/oversized tail fragment —
+        # by construction the NEWEST content of its file. Sort it newest,
+        # or a busy bucket's trim-to-n would silently discard exactly the
+        # marker that says "this source's latest record couldn't be shown".
+        ts = e.get("timestamp")
+        return (0, str(ts)) if ts else (1, "")
+
+    def parse(lines, fallback_program):
+        """-> (entries, program_seen). Entries carry previews (raw/error
+        capped); program_seen is the last well-formed entry's program —
+        the file's own say on who it belongs to."""
+        out, seen = [], None
+        for ln in lines:
+            well_formed = False
+            try:
+                e = json.loads(ln)
+                well_formed = isinstance(e, dict)
+                if not well_formed:
+                    e = {"raw": ln}
+            except Exception:
+                e = {"raw": ln}
+            if well_formed and e.get("program"):
+                seen = str(e["program"])
+            if not e.get("program"):
+                e["program"] = fallback_program or "unknown"
+            raw = e.get("raw")
+            if isinstance(raw, str) and len(raw) > _DLQ_RAW_PREVIEW:
+                e["raw"] = raw[:_DLQ_RAW_PREVIEW] + "…"
+            err = e.get("error")
+            if isinstance(err, str) and len(err) > _DLQ_ERR_PREVIEW:
+                e["error"] = err[:_DLQ_ERR_PREVIEW] + "…"
+            out.append(e)
+        return out, seen
+
+    total_bytes = 0
+
+    # New layout: logs/dlq/<program>.wN.json, size-capped with one rotated
+    # .json.1 generation. A rotated file whose live sibling exists is read
+    # only as that sibling's top-up; an orphaned one (rotation happened,
+    # then the source went quiet or the engine stopped) is a source of its
+    # own — it holds exactly the history an analyst comes back to read.
+    live = sorted(glob.glob(os.path.join(LOG_DIR, "dlq", "*.json")))
+    live_set = set(live)
+    orphans = [p for p in sorted(glob.glob(
+        os.path.join(LOG_DIR, "dlq", "*.json.1"))) if p[:-2] not in live_set]
+
+    def mtime(p):
         try:
-            with open(d, "r", encoding="utf-8", errors="ignore") as f:
-                for ln in f.readlines()[-n:]:
-                    ln = ln.strip()
-                    if not ln:
-                        continue
-                    try:
-                        entries.append(json.loads(ln))
-                    except Exception:
-                        entries.append({"raw": ln})
-        except Exception:
+            return os.path.getmtime(p)
+        except OSError:
+            return 0.0
+
+    candidates = ([(p, False) for p in live] + [(p, True) for p in orphans])
+    candidates.sort(key=lambda t: mtime(t[0]), reverse=True)
+    # A capped-out live file takes its .1 sibling with it: count and stat
+    # BOTH, so the "N files skipped" notice and total_bytes stay honest
+    # exactly when the DLQ is at its worst (stat is cheap; reads are what
+    # the cap bounds).
+    files_skipped = 0
+    for path, is_orphan in candidates[_DLQ_MAX_FILES:]:
+        for p in ((path,) if is_orphan else (path, path + ".1")):
+            try:
+                total_bytes += os.path.getsize(p)
+            except OSError:
+                continue
+            files_skipped += 1
+    for path, is_orphan in candidates[:_DLQ_MAX_FILES]:
+        fallback = _dlq_program_from_fname(os.path.basename(path))
+        lines = _dlq_tail_lines(path, n)
+        if not is_orphan and len(lines) < n:
+            lines = _dlq_tail_lines(path + ".1", n - len(lines)) + lines
+        ents, program_seen = parse(lines, fallback)
+        # One DLQ file holds one program, and its entries name it exactly;
+        # the filename is a fallback (it can be ambiguous: a single-worker
+        # file "backup.w3.json" could be program backup.w3 OR worker 3 of
+        # "backup" — the entries know which).
+        g = bucket(program_seen or fallback)
+        if program_seen:
+            g["claimed"] = True
+        g["entries"].extend(ents)
+        for p in ((path,) if is_orphan else (path, path + ".1")):
+            try:
+                sz = os.path.getsize(p)
+            except OSError:
+                continue
+            g["bytes"] += sz
+            g["files"] += 1
+            total_bytes += sz
+        # Trim as we scan so many worker files of one noisy source can
+        # never pile up more than n entries in RAM.
+        if len(g["entries"]) > n:
+            g["entries"].sort(key=ts_key)
+            del g["entries"][:-n]
+
+    # Old flat layout (pre per-source engine): logs/dlq*.json holds mixed
+    # programs, so the entry's own program field decides the folder.
+    for path in sorted(glob.glob(os.path.join(LOG_DIR, "dlq*.json"))):
+        ents, _ = parse(_dlq_tail_lines(path, n), None)
+        for e in ents:
+            g = bucket(e.get("program"))
+            g["entries"].append(e)
+            g["claimed"] = True
+        try:
+            total_bytes += os.path.getsize(path)
+        except OSError:
+            pass
+
+    # A file whose whole tail was unparseable got bucketed under its
+    # SANITIZED filename ("my nginx" writes my_nginx.w0.json). If exactly
+    # one real program sanitizes to that name, fold the guess-bucket into
+    # it instead of showing the analyst two folders for one source.
+    def sanitized(p):  # mirror DlqWriter._SAFE_NAME
+        return (re.sub(r"[^A-Za-z0-9_.-]", "_", p).lstrip(".")[:80]
+                or "unknown")
+
+    for key in [k for k, g in groups.items() if not g["claimed"]]:
+        owners = [k2 for k2, g2 in groups.items()
+                  if g2["claimed"] and k2 != key and sanitized(k2) == key]
+        if len(owners) == 1:
+            src = groups.pop(key)
+            tgt = groups[owners[0]]
+            tgt["entries"].extend(src["entries"])
+            tgt["bytes"] += src["bytes"]
+            tgt["files"] += src["files"]
+
+    sources = []
+    for program, g in groups.items():
+        ents = sorted(g["entries"], key=ts_key)[-n:]
+        if not ents:
             continue
-    return jsonify({"entries": entries[-n:], "count": len(entries)})
+        errors = {}
+        for e in ents:
+            kind = str(e.get("error") or "unparsed")
+            errors[kind] = errors.get(kind, 0) + 1
+        sources.append({
+            "program": program,
+            "entries": ents,            # chronological; client shows newest first
+            "errors": errors,           # breakdown of the tail shown
+            "bytes": g["bytes"],        # on-disk size (live + rotated)
+            "files": g["files"],
+            # Newest KNOWN timestamp (untimestamped fragments sort newest
+            # but must not blank the folder's freshness ordering).
+            "latest": next((e.get("timestamp") for e in reversed(ents)
+                            if e.get("timestamp")), None),
+        })
+    # Freshest trouble first — the folder an analyst needs is on top.
+    sources.sort(key=lambda s: str(s.get("latest") or ""), reverse=True)
+
+    # Flat last-n across ALL sources — computed BEFORE the source cap, so
+    # older API consumers (who only read entries/count) don't silently lose
+    # entries when more than _DLQ_MAX_SOURCES sources exist.
+    flat = sorted((e for s in sources for e in s["entries"]), key=ts_key)[-n:]
+
+    sources_omitted = max(0, len(sources) - _DLQ_MAX_SOURCES)
+    sources = sources[:_DLQ_MAX_SOURCES]
+    return jsonify({"sources": sources, "n": n, "total_bytes": total_bytes,
+                    "files_skipped": files_skipped,
+                    "sources_omitted": sources_omitted,
+                    "entries": flat, "count": len(flat)})
 
 
 @app.route("/api/engine/<action>", methods=["POST"])

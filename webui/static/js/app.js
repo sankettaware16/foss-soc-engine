@@ -1314,15 +1314,67 @@ async function engineControl(act) {
   }
 }
 
-$("#mon-dlq-load").addEventListener("click", async () => {
+function dlqTs(ts) {
+  // make_dlq always stamps UTC; say so, or an IST analyst reads a
+  // seconds-old failure as 5.5 hours old.
+  return ts ? String(ts).replace("T", " ").slice(0, 19) + " UTC" : "";
+}
+
+function dlqLine(e) {
+  const ts = dlqTs(e.timestamp);
+  return `<div class="logline ERROR"><span class="lvl">${esc(e.error || "unparsed")}</span>` +
+    (ts ? `<span class="dlq-ts">${esc(ts)}</span> ` : "") +
+    `${esc((e.raw || "").slice(0, 300))}</div>`;
+}
+
+async function loadDlq() {
+  const box = $("#mon-dlq");
   try {
     const d = await api("/api/monitor/dlq?n=25");
-    if (!d.entries.length) { $("#mon-dlq").innerHTML = '<p class="muted small">DLQ is empty — nothing unparsed. 🎉</p>'; return; }
-    $("#mon-dlq").innerHTML = d.entries.reverse().map((e) =>
-      `<div class="logline ERROR"><span class="lvl">${esc(e.program || "?")}</span>${esc(e.error || "")} — ${esc((e.raw || "").slice(0, 200))}</div>`
-    ).join("");
+    const srcs = d.sources || [];
+    if (!srcs.length) { box.innerHTML = '<p class="muted small">DLQ is empty — nothing unparsed. 🎉</p>'; return; }
+    // Keep the analyst's expand/collapse choices across "Load latest"
+    // clicks; defaults apply only on the first render. Compare via the
+    // same normalization the HTML parser applies to text (\r -> \n, NUL
+    // dropped), or a program name containing those never matches its own
+    // rendered textContent.
+    const progKey = (p) => String(p).replace(/\r\n?/g, "\n").replace(/\0/g, "");
+    // A source can transiently appear under its filename-sanitized name
+    // (whole tail unparseable) and heal to its real name a click later;
+    // match open-state through that rename by remembering both forms.
+    const sanitizeProg = (p) => progKey(p).replace(/[^A-Za-z0-9_.\-]/g, "_")
+      .replace(/^\.+/, "").slice(0, 80) || "unknown";
+    const firstRender = !box.querySelector(".dlq-group");
+    const wasOpen = new Set();
+    box.querySelectorAll(".dlq-group[open] .dlq-name").forEach((el) => {
+      wasOpen.add(el.textContent);
+      wasOpen.add(sanitizeProg(el.textContent));
+    });
+    const openAll = srcs.length <= 2; // few folders -> just show everything
+    box.innerHTML = srcs.map((s, i) => {
+      const open = firstRender ? openAll || i === 0
+        : wasOpen.has(progKey(s.program)) || wasOpen.has(sanitizeProg(s.program));
+      const kinds = Object.entries(s.errors || {}).sort((a, b) => b[1] - a[1])
+        .map(([k, c]) => `${fmtNum(c)}× ${esc(k)}`).join(", ");
+      const meta = [
+        `last ${s.entries.length}: ${kinds}`,
+        s.files ? `${fmtBytes(s.bytes)} on disk` : "",
+        s.latest ? `newest ${esc(dlqTs(s.latest))}` : "",
+      ].filter(Boolean).join(" · ");
+      return `<details class="dlq-group"${open ? " open" : ""}>
+        <summary><span class="dlq-name">${esc(s.program)}</span><span class="dlq-meta muted small">${meta}</span></summary>
+        <div class="loglist dlq-lines">${s.entries.slice().reverse().map(dlqLine).join("")}</div>
+      </details>`;
+    }).join("");
+    const omitted = [
+      d.sources_omitted ? `${fmtNum(d.sources_omitted)} more source${d.sources_omitted === 1 ? "" : "s"} omitted` : "",
+      d.files_skipped ? `${fmtNum(d.files_skipped)} older file${d.files_skipped === 1 ? "" : "s"} skipped` : "",
+    ].filter(Boolean).join(" · ");
+    if (omitted) box.insertAdjacentHTML("beforeend",
+      `<p class="muted small">${omitted} — inspect logs/dlq/ directly for the rest.</p>`);
   } catch (e) { toast(e.message, "bad"); }
-});
+}
+$("#mon-dlq-load").addEventListener("click", loadDlq);
 
 /* ============================================================== *
  *  Session (whoami / logout)

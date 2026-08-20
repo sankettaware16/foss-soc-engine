@@ -42,6 +42,21 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 - Community health files: contributing guide, security policy, code of conduct,
   issue templates, and a pull request template.
 - Component roadmap (`docs/roadmap.md`).
+- **Monitor: per-source DLQ folders.** "Recent errors / DLQ" now groups
+  dead-letters into one collapsible folder per source program (`squid`,
+  `nginx`, `postfix`, … — new sources appear automatically), each with its
+  own recent tail, a failure-reason breakdown, on-disk size, and
+  newest-failure timestamp (UTC-labeled), ordered freshest-trouble-first —
+  so a storming source can no longer bury the few lines from another source
+  an analyst is hunting. Expand/collapse choices survive "Load latest".
+  The `/api/monitor/dlq` endpoint behind it was hardened: bounded tail
+  reads (256 KiB per file, never whole files, so a 200 MB DLQ no longer
+  spikes the UI's RAM), rotated `.json.1` files are included (a source that
+  stormed and then went quiet stays visible), `raw`/`error` ship as
+  previews (400/80 chars; the full line stays on disk), and a hostile flood
+  of forged program names is capped (400 files / 50 sources per request,
+  with the leftovers counted in the response and shown in the UI). The old
+  flat `entries` key is still returned for existing consumers.
 
 ### Fixed
 
