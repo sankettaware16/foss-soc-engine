@@ -20,6 +20,26 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **dnsdist parser** (`rules/dns.yaml`): PowerDNS dnsdist verbose query/answer
+  lines (root-zone names, bracketed IPv6 clients), rsyslog
+  "message repeated" wrappers, security-advisory notices, and a daemon-message
+  catch-all so dnsdist's own lines stay out of the DLQ. Ships with a golden
+  corpus and a `dns: "dnsdist"` program-mapping example.
+- **nginx rule, production-hardened from live DLQ analysis**: vhost-first
+  syslog access format (plus authenticated, malformed-request and
+  rsyslog-repeated variants, absolute-form request split into
+  `nginx.absolute_uri.*`), SSL-handshake aborts ("while SSL handshaking"),
+  upstream `connect()` failures with any errno (plain and repeated),
+  `limit_req`/`limit_conn` events, NAXSI WAF blocks, and a last-resort
+  error-log catch-all (`event.action: nginx_error_unclassified`). All
+  request-carrying error patterns now accept IPv6 clients and tolerate
+  nginx's 2048-byte error-log truncation (tail fields become optional).
+- **squid rule**: the syslog `[pid]` suffix is now optional in every pattern,
+  so proxies whose tag logs as `(squid-1):` without a pid parse instead of
+  dead-lettering; plus a last-resort `http_request_fallback` for proxied HTTP
+  lines with any hierarchy tag or unusual destination token (IPv6 literals,
+  `-`, underscored hosts → `destination.address`, engine-classified).
+
 - **Internal IP map enrichment** — GeoIP for your own address space. A plain
   YAML file (`database/internal_ips.yaml` beside the GeoIP databases, or a
   directory of files; config block `internal_map:`) declares which

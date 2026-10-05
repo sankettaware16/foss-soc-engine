@@ -1,0 +1,152 @@
+pattern_name: "dnsdist"
+strategy: "multi_match"
+
+# rsyslog prefixes each line with an ISO-8601 stamp (with offset) - that is
+# the event time. If your hosts stamp local time mislabeled +00:00, capture
+# only the seconds and add tz: "+05:30"-style, as documented for postfix.
+timestamp:
+  regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\S+)'
+  format: iso8601
+
+patterns:
+  # dnsdist verbose query log. The trailing dot of the qname is stripped;
+  # a root-zone query ("for . SOA") yields dns.question.name = ".".
+  # Client accepts IPv4 and bracketed IPv6 ("[2001:db8::1]:53").
+  - name: "query"
+    prematch: "Packet from"
+    regex: '^(?P<ts>\S+)\s+(?P<host>\S+)\s+dnsdist(?:-[\w.-]+)?\[(?P<pid>\d+)\]:\s+Packet from\s+\[?(?P<client_ip>[\da-fA-F.:]+?)\]?:(?P<client_port>\d+)\s+for\s+(?P<qname>\S+?)\.?\s+(?P<qtype>\S+)\s+with id\s+(?P<qid>\d+)'
+    mapping:
+      ts: "event.original_time"
+      host: "host.name"
+      pid: "process.pid|int"
+      client_ip: "source.ip"
+      client_port: "source.port|int"
+      qname: "dns.question.name"
+      qtype: "dns.question.type"
+      qid: "dns.id|int"
+    static:
+      event.kind: "event"
+      event.category: "network"
+      event.type: "protocol"
+      event.action: "dns-query"
+      network.protocol: "dns"
+      dns.type: "query"
+      process.name: "dnsdist"
+      observer.vendor: "PowerDNS"
+      observer.product: "dnsdist"
+
+  - name: "answer"
+    prematch: "Answer to"
+    regex: '^(?P<ts>\S+)\s+(?P<host>\S+)\s+dnsdist(?:-[\w.-]+)?\[(?P<pid>\d+)\]:\s+Answer to\s+\[?(?P<client_ip>[\da-fA-F.:]+?)\]?:(?P<client_port>\d+)\s+for\s+(?P<qname>\S+?)\.?\s+(?P<qtype>\S+)\s+\((?P<rcode>[^)]+)\)\s+with id\s+(?P<qid>\d+)'
+    mapping:
+      ts: "event.original_time"
+      host: "host.name"
+      pid: "process.pid|int"
+      client_ip: "source.ip"
+      client_port: "source.port|int"
+      qname: "dns.question.name"
+      qtype: "dns.question.type"
+      qid: "dns.id|int"
+      rcode: "dns.response_code"
+    static:
+      event.kind: "event"
+      event.category: "network"
+      event.type: "protocol"
+      event.action: "dns-answer"
+      network.protocol: "dns"
+      dns.type: "answer"
+      process.name: "dnsdist"
+      observer.vendor: "PowerDNS"
+      observer.product: "dnsdist"
+
+  # rsyslog "message repeated N times: [ ... ]" wrappers of the two above.
+  - name: "query_repeated"
+    prematch: "message repeated"
+    regex: '^(?P<ts>\S+)\s+(?P<host>\S+)\s+dnsdist(?:-[\w.-]+)?\[(?P<pid>\d+)\]:\s+message repeated\s+(?P<repeat_count>\d+)\s+times:\s+\[\s+Packet from\s+\[?(?P<client_ip>[\da-fA-F.:]+?)\]?:(?P<client_port>\d+)\s+for\s+(?P<qname>\S+?)\.?\s+(?P<qtype>\S+)\s+with id\s+(?P<qid>\d+)\]'
+    mapping:
+      ts: "event.original_time"
+      host: "host.name"
+      pid: "process.pid|int"
+      repeat_count: "event.repeat_count|int"
+      client_ip: "source.ip"
+      client_port: "source.port|int"
+      qname: "dns.question.name"
+      qtype: "dns.question.type"
+      qid: "dns.id|int"
+    static:
+      event.kind: "event"
+      event.category: "network"
+      event.type: "protocol"
+      event.action: "dns-query"
+      network.protocol: "dns"
+      dns.type: "query"
+      process.name: "dnsdist"
+      observer.vendor: "PowerDNS"
+      observer.product: "dnsdist"
+      event.reason: "rsyslog_message_repeated"
+
+  - name: "answer_repeated"
+    prematch: "message repeated"
+    regex: '^(?P<ts>\S+)\s+(?P<host>\S+)\s+dnsdist(?:-[\w.-]+)?\[(?P<pid>\d+)\]:\s+message repeated\s+(?P<repeat_count>\d+)\s+times:\s+\[\s+Answer to\s+\[?(?P<client_ip>[\da-fA-F.:]+?)\]?:(?P<client_port>\d+)\s+for\s+(?P<qname>\S+?)\.?\s+(?P<qtype>\S+)\s+\((?P<rcode>[^)]+)\)\s+with id\s+(?P<qid>\d+)\]'
+    mapping:
+      ts: "event.original_time"
+      host: "host.name"
+      pid: "process.pid|int"
+      repeat_count: "event.repeat_count|int"
+      client_ip: "source.ip"
+      client_port: "source.port|int"
+      qname: "dns.question.name"
+      qtype: "dns.question.type"
+      qid: "dns.id|int"
+      rcode: "dns.response_code"
+    static:
+      event.kind: "event"
+      event.category: "network"
+      event.type: "protocol"
+      event.action: "dns-answer"
+      network.protocol: "dns"
+      dns.type: "answer"
+      process.name: "dnsdist"
+      observer.vendor: "PowerDNS"
+      observer.product: "dnsdist"
+      event.reason: "rsyslog_message_repeated"
+
+  # Security advisories get event.kind alert; must stay before daemon_message.
+  - name: "daemon_notice"
+    prematch: ["Security Update", "PowerDNS"]
+    regex: '^(?P<ts>\S+)\s+(?P<host>\S+)\s+dnsdist(?:-[\w.-]+)?\[(?P<pid>\d+)\]:\s+(?P<msg>(?!Packet from|Answer to|message repeated).+)$'
+    mapping:
+      ts: "event.original_time"
+      host: "host.name"
+      pid: "process.pid|int"
+      msg: "message"
+    static:
+      event.kind: "alert"
+      event.category: "process"
+      event.type: "info"
+      event.action: "daemon-notice"
+      log.level: "notice"
+      process.name: "dnsdist"
+      observer.vendor: "PowerDNS"
+      observer.product: "dnsdist"
+
+  # Catch-all for every other dnsdist daemon line (Marking downstream ...
+  # as 'down', config reloads, ...) - keep LAST. The lookahead keeps
+  # query/answer/repeated shapes out so a broken one surfaces in the DLQ
+  # instead of being silently swallowed here.
+  - name: "daemon_message"
+    prematch: "dnsdist"
+    regex: '^(?P<ts>\S+)\s+(?P<host>\S+)\s+dnsdist(?:-[\w.-]+)?\[(?P<pid>\d+)\]:\s+(?P<msg>(?!Packet from|Answer to|message repeated).+)$'
+    mapping:
+      ts: "event.original_time"
+      host: "host.name"
+      pid: "process.pid|int"
+      msg: "message"
+    static:
+      event.kind: "event"
+      event.category: "process"
+      event.type: "info"
+      event.action: "daemon-message"
+      process.name: "dnsdist"
+      observer.vendor: "PowerDNS"
+      observer.product: "dnsdist"

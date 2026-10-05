@@ -3,3 +3,7 @@ Jul  9 10:00:01 proxyhost (squid-1)[123]: 1752048001.500 12 10.0.0.5:51001 10.0.
 Jul  9 10:00:02 proxyhost (squid-1)[123]: 1752048002.000 0 10.0.0.5:51002 -:- TCP_DENIED/403 3618 GET http://blocked.example/ - HIER_NONE/- text/html
 Jul  9 10:00:03 proxyhost (squid-1)[123]: 1752048003.250 5 10.0.0.5:51003 -:- NONE/400 3618 NONE error:invalid-request - HIER_NONE/- text/html
 Jul  9 10:00:04 proxyhost (squid-1)[123]: this line matches nothing
+2026-08-20T15:41:29+00:00 proxyhost2 (squid-5)[1953]: 1787220689.711 529 10.0.0.22:19849 203.0.113.76:49479 TCP_MISS/200 305 GET http://i-4102.b-11225.example.net/beacon - HIER_DIRECT/i-4102.b-11225.example.net application/octet-stream
+2026-08-20T15:41:16+00:00 proxyhost2 (squid-3)[2013]: 1787220676.763 5 10.0.0.44:55821 203.0.113.79:0 TCP_MISS/503 3958 GET http://[::1]/DevMgmt/DiscoveryTree.xml - ORIGINAL_DST/[::1] text/html
+2026-08-20T15:40:42+00:00 proxyhost2 (squid-4)[1950]: 1787220642.179 1981 10.0.0.36:52554 203.0.113.56:22631 TCP_MISS/200 308 GET http://foo_bar.example.com/x - ORIGINAL_DST/- application/json
+2026-08-20T16:00:00+00:00 proxyhost2 (squid-1): 1787222400.123 15 10.0.0.50:40000 203.0.113.80:3128 TCP_MISS/200 1024 GET http://www.example.com/ - HIER_DIRECT/93.184.216.34 text/html

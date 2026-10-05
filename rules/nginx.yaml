@@ -12,6 +12,222 @@ timestamp:
 patterns:
 
   # ============================================================
+  # SYSLOG-PREFIXED, VHOST-FIRST ACCESS LOG
+  # After the rsyslog "<ts> <host> <prog>:" prefix the line carries:
+  #   $host $remote_addr "<x>:<y>" $remote_port - $remote_user [$time_local]
+  #   "$request" $status $body_bytes "$referer" "$user_agent" "$xff"
+  # e.g.  2026-09-03T10:58:24.242013+00:00 web1.example.com vhnginx_access: www.example.com 203.0.113.10 ":" 64162 - - [03/Sep/2026:16:28:24 +0530] "GET /favicon.ico HTTP/2.0" 499 0 "https://www.example.com/" "Mozilla/5.0 ..." "-"
+  # The quoted "<x>:<y>" field is captured as `extra` but unmapped.
+  # Absolute-form requests (GET http://host/path, proxy probes) split
+  # scheme://host into nginx.absolute_uri.* so url.path stays a path.
+  # Client IP accepts IPv4 and IPv6. Event time inherits the file-level
+  # CLF block. These cannot collide with the older formats below.
+  # ============================================================
+
+  - name: "nginx_access_syslog_vhost"
+
+    prematch: "HTTP/"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<vhost>[^\s"]+) (?P<ip>[\da-fA-F\.:]+) "(?P<extra>[^"]*)" (?P<remote_port>\d+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?:(?P<abs_scheme>[a-z][a-z0-9+.\-]*)://(?P<abs_host>[^/\s\?"]+)(?=/))?(?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))?\s+HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      vhost: "url.domain"
+
+      ip: "source.ip"
+      remote_port: "source.port|int"
+
+      method: "http.request.method"
+      abs_scheme: "nginx.absolute_uri.scheme"
+      abs_host: "nginx.absolute_uri.host"
+      http_version: "http.version"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      path: "url.path"
+      query: "url.query"
+
+      forwarded_for: "nginx.forwarded_for"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+
+
+  # Same format, authenticated request ("- <user>" instead of "- -")
+
+  - name: "nginx_access_syslog_vhost_user"
+
+    prematch: "HTTP/"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<vhost>[^\s"]+) (?P<ip>[\da-fA-F\.:]+) "(?P<extra>[^"]*)" (?P<remote_port>\d+) - (?P<remote_user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?:(?P<abs_scheme>[a-z][a-z0-9+.\-]*)://(?P<abs_host>[^/\s\?"]+)(?=/))?(?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))?\s+HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      vhost: "url.domain"
+
+      ip: "source.ip"
+      remote_port: "source.port|int"
+      remote_user: "user.name"
+
+      method: "http.request.method"
+      abs_scheme: "nginx.absolute_uri.scheme"
+      abs_host: "nginx.absolute_uri.host"
+      http_version: "http.version"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      path: "url.path"
+      query: "url.query"
+
+      forwarded_for: "nginx.forwarded_for"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+
+
+  # Same format, but the request line is not "<METHOD> <path> HTTP/x.y".
+  # Catches scanner / garbage traffic that nginx logs with status 400:
+  #   "-", "\x16\x03\x01\x02..." (TLS on a plain port), "GET /" (HTTP/0.9), etc.
+  # Kept AFTER the two patterns above (first match wins). Whole request
+  # line is preserved in nginx.request_line.
+
+  - name: "nginx_access_syslog_vhost_badreq"
+
+    prematch: '] "'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<vhost>[^\s"]+) (?P<ip>[\da-fA-F\.:]+) "(?P<extra>[^"]*)" (?P<remote_port>\d+) - \S+ \[(?P<timestamp>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      vhost: "url.domain"
+
+      ip: "source.ip"
+      remote_port: "source.port|int"
+
+      request: "nginx.request_line"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      forwarded_for: "nginx.forwarded_for"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+      event.reason: "malformed_request_line"
+
+
+  # ============================================================
+  # RSYSLOG "message repeated N times: [ ... ]" WRAPPER around the
+  # vhost-first access line (nginx_message_repeated further down only
+  # knows the pre-vhost layout). Same fields as nginx_access_syslog_vhost
+  # plus event.repeat_count; "- -" and "- <user>" both handled (a literal
+  # "-" leaves user.name unset). Event time inherits the file-level CLF
+  # block, exactly like the non-repeated access patterns.
+  # ============================================================
+
+  - name: "nginx_access_syslog_vhost_repeated"
+
+    prematch: "message repeated"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<vhost>[^\s"]+) (?P<ip>[\da-fA-F\.:]+) "(?P<extra>[^"]*)" (?P<remote_port>\d+) - (?:-|(?P<remote_user>\S+)) \[(?P<timestamp>[^\]]+)\] "(?P<method>\w+) (?:(?P<abs_scheme>[a-z][a-z0-9+.\-]*)://(?P<abs_host>[^/\s\?"]+)(?=/))?(?P<path>[^\?\s]+)(?:\?(?P<query>[^\s]*))?\s+HTTP/(?P<http_version>[\d\.]+)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?\]'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      repeat_count: "event.repeat_count|int"
+
+      vhost: "url.domain"
+
+      ip: "source.ip"
+      remote_port: "source.port|int"
+      remote_user: "user.name"
+
+      method: "http.request.method"
+      abs_scheme: "nginx.absolute_uri.scheme"
+      abs_host: "nginx.absolute_uri.host"
+      http_version: "http.version"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      path: "url.path"
+      query: "url.query"
+
+      forwarded_for: "nginx.forwarded_for"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+      event.reason: "rsyslog_message_repeated"
+
+
+  # Same wrapper, but the request line is not "<METHOD> <path> HTTP/x.y"
+  # (scanner garbage, status 400). Mirrors nginx_access_syslog_vhost_badreq;
+  # event.repeat_count marks it as a repeated line.
+
+  - name: "nginx_access_syslog_vhost_repeated_badreq"
+
+    prematch: "message repeated"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<vhost>[^\s"]+) (?P<ip>[\da-fA-F\.:]+) "(?P<extra>[^"]*)" (?P<remote_port>\d+) - \S+ \[(?P<timestamp>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d+) (?P<body_bytes>\d+) "(?P<referrer>[^"]*)" "(?P<user_agent>[^"]*)"(?: "(?P<forwarded_for>[^"]*)")?\]'
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      repeat_count: "event.repeat_count|int"
+
+      vhost: "url.domain"
+
+      ip: "source.ip"
+      remote_port: "source.port|int"
+
+      request: "nginx.request_line"
+      status: "http.response.status_code|int"
+      body_bytes: "http.response.body.bytes|int"
+
+      user_agent: "user_agent.original"
+      referrer: "http.request.referrer"
+
+      forwarded_for: "nginx.forwarded_for"
+
+      timestamp: "event.original_time"
+
+    static:
+      event.category: "web"
+      event.type: "access"
+      event.reason: "malformed_request_line"
+
+
+  # ============================================================
   # STANDARD ACCESS LOG
   # ============================================================
 
@@ -148,12 +364,17 @@ patterns:
 
   # ============================================================
   # CONNECTION REFUSED
+  # nginx cuts error-log lines at 2048 bytes (NGX_MAX_ERROR_STR); a cut
+  # inside a long URL drops the HTTP/x.y", upstream:, host: tail. This
+  # and every other request:-carrying error pattern below treat the tail
+  # as optional: a full line parses exactly as before, a truncated one
+  # just lacks http.version / nginx.upstream / url.domain.
   # ============================================================
 
   - name: "nginx_upstream_refused"
 
     prematch: "(111: Connection refused)"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(111: Connection refused\) while connecting to upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(111: Connection refused\) while connecting to upstream, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, upstream: "(?P<upstream>[^"]+)"?)?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
 
     # nginx error time is server-local with no zone; declare tz: if known
     timestamp:
@@ -183,6 +404,8 @@ patterns:
       server: "server.domain"
       host_header: "url.domain"
 
+      referrer: "http.request.referrer"
+
       connection: "nginx.connection_id"
 
     static:
@@ -199,7 +422,7 @@ patterns:
   - name: "nginx_upstream_timeout"
 
     prematch: "(110: Connection timed out)"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(110: Connection timed out\) while connecting to upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"(?:, referrer: "(?P<referrer>[^"]+)")?'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(110: Connection timed out\) while connecting to upstream, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, upstream: "(?P<upstream>[^"]+)"?)?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
 
     timestamp:
       group: timestamp
@@ -240,13 +463,67 @@ patterns:
 
 
   # ============================================================
+  # ANY OTHER UPSTREAM connect() FAILURE
+  # Same line as the two patterns above with a different errno, e.g.
+  # (113: No route to host), (104: Connection reset by peer),
+  # (101: Network is unreachable). 110/111 keep their dedicated
+  # patterns and event.action values (first match wins); here the
+  # errno goes to error.code and its text to error.message.
+  # ============================================================
+
+  - name: "nginx_upstream_connect_failed"
+
+    prematch: "connect() failed ("
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \((?P<errno>\d+): (?P<errmsg>[^)]+)\) while connecting to upstream, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, upstream: "(?P<upstream>[^"]+)"?)?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
+
+    timestamp:
+      group: timestamp
+      format: nginx_error
+      tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+      connection: "nginx.connection_id"
+
+      errno: "error.code"
+      errmsg: "error.message"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      upstream: "nginx.upstream"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "upstream_connect_failed"
+      event.outcome: "failure"
+
+
+  # ============================================================
   # UPSTREAM PREMATURE CLOSE
   # ============================================================
 
   - name: "nginx_upstream_premature_close"
 
     prematch: "closed connection while reading upstream"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while reading upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while reading upstream, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, upstream: "(?P<upstream>[^"]+)"?)?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
 
     timestamp:
       group: timestamp
@@ -275,6 +552,8 @@ patterns:
       server: "server.domain"
       host_header: "url.domain"
 
+      referrer: "http.request.referrer"
+
       connection: "nginx.connection_id"
 
     static:
@@ -291,7 +570,7 @@ patterns:
   - name: "nginx_client_body_too_large"
 
     prematch: "too large body"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) client intended to send too large body: (?P<body_size>\d+) bytes, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", host: "(?P<host_header>[^"]+)"(?:, referrer: "(?P<referrer>[^"]+)")?'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) client intended to send too large body: (?P<body_size>\d+) bytes, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
 
     timestamp:
       group: timestamp
@@ -332,7 +611,54 @@ patterns:
 
 
   # ============================================================
-  # SSL HANDSHAKE FAILURE
+  # SSL HANDSHAKE ERROR  ("... while SSL handshaking", level crit/info)
+  # nginx_ssl_failure below gates on "SSL handshake", which is NOT a
+  # substring of "SSL handshaking" -- these aborts need their own pattern.
+  # e.g.  ... [crit] 1278#1278: *3357826 SSL_do_handshake() failed (SSL: error:141CF06C:SSL routines:tls_parse_ctos_key_share:bad key share) while SSL handshaking, client: 203.0.113.9, server: 192.0.2.5:443
+  # No request exists yet, so "server:" is the LISTEN socket -> server.address.
+  # error.type = what failed; error.code = OpenSSL code; error.message = detail.
+  # ============================================================
+
+  - name: "nginx_ssl_handshake_error"
+
+    prematch: "while SSL handshaking"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) (?P<ssl_failure>.+?)(?: \((?:SSL: error:(?P<ssl_code>[0-9A-Fa-f]+):)?(?P<ssl_detail>[^)]*)\))? while SSL handshaking, client: (?P<client_ip>[\da-fA-F\.:]+)(?:, server: (?P<listen_addr>\S+))?'
+
+    timestamp:
+      group: timestamp
+      format: nginx_error
+      tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+      connection: "nginx.connection_id"
+
+      client_ip: "source.ip"
+      listen_addr: "server.address"
+
+      ssl_failure: "error.type"
+      ssl_code: "error.code"
+      ssl_detail: "error.message"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "ssl_handshake_failure"
+      event.outcome: "failure"
+      network.protocol: "https"
+
+
+  # ============================================================
+  # SSL HANDSHAKE FAILURE  (legacy fallback -- nginx_ssl_handshake_error
+  # above now takes these lines and extracts the fields)
   # ============================================================
 
   - name: "nginx_ssl_failure"
@@ -383,7 +709,7 @@ patterns:
   - name: "nginx_upstream_closed_sending"
 
     prematch: "while sending to client"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while sending to client, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"(?:, referrer: "(?P<referrer>[^"]+)")?'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while sending to client, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, upstream: "(?P<upstream>[^"]+)"?)?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
 
     timestamp:
       group: timestamp
@@ -430,7 +756,7 @@ patterns:
   - name: "nginx_upstream_closed_header"
 
     prematch: "while reading response header"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while reading response header from upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"(?:, referrer: "(?P<referrer>[^"]+)")?'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) upstream prematurely closed connection while reading response header from upstream, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, upstream: "(?P<upstream>[^"]+)"?)?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
 
     timestamp:
       group: timestamp
@@ -514,7 +840,7 @@ patterns:
   - name: "nginx_error_repeated"
 
     prematch: "message repeated"
-    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(110: Connection timed out\) while connecting to upstream, client: (?P<client_ip>[\d\.]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"\]'
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \(110: Connection timed out\) while connecting to upstream, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+) HTTP/(?P<http_version>[\d\.]+)", upstream: "(?P<upstream>[^"]+)", host: "(?P<host_header>[^"]+)"\]'
 
     timestamp:
       group: timestamp
@@ -553,3 +879,276 @@ patterns:
       event.action: "upstream_timeout_repeated"
       event.outcome: "failure"
       event.reason: "rsyslog_message_repeated"
+
+
+  # Same wrapper around any connect() failure (111 refused, 113 no route,
+  # 104 reset ...). nginx_error_repeated above keeps 110 with its own
+  # event.action; everything else lands here with errno in error.code.
+  # Tail is optional for the same 2048-byte truncation reason as above.
+
+  - name: "nginx_upstream_connect_failed_repeated"
+
+    prematch: "message repeated"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): message repeated (?P<repeat_count>\d+) times: \[ (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) connect\(\) failed \((?P<errno>\d+): (?P<errmsg>[^)]+)\) while connecting to upstream, client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s\]]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, upstream: "(?P<upstream>[^"]+)"?)?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
+
+    timestamp:
+      group: timestamp
+      format: nginx_error
+      tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+      connection: "nginx.connection_id"
+
+      repeat_count: "event.repeat_count|int"
+
+      errno: "error.code"
+      errmsg: "error.message"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      upstream: "nginx.upstream"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "upstream_connect_failed_repeated"
+      event.outcome: "failure"
+      event.reason: "rsyslog_message_repeated"
+
+
+  - name: "nginx_rate_limit"
+
+    prematch: "limiting requests"
+
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) limiting requests, excess: (?P<excess>[\d.]+) by zone "(?P<zone>[^"]+)", client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
+
+    timestamp:
+      group: timestamp
+      format: nginx_error
+      tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+      connection: "nginx.connection_id"
+
+      excess: "nginx.rate_limit.excess|float"
+      zone: "nginx.rate_limit.zone"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "rate_limit"
+      event.outcome: "failure"
+      event.reason: "nginx_limit_req"
+
+  # ============================================================
+  # CONNECTION LIMIT EXCEEDED
+  # nginx limit_conn
+  # Example:
+  # limiting connections by zone "conn_perip", client: 1.2.3.4,
+  # server: www.example.com, request: "GET / HTTP/2.0",
+  # host: "www.example.com"
+  # ============================================================
+
+  - name: "nginx_connection_limit"
+
+    prematch: "limiting connections by zone"
+
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) limiting connections by zone "(?P<zone>[^"]+)", client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[^"]+)")?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
+
+    timestamp:
+      group: timestamp
+      format: nginx_error
+      tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+      connection: "nginx.connection_id"
+
+      zone: "nginx.connection_limit.zone"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "connection_limit"
+      event.outcome: "failure"
+      event.reason: "nginx_limit_conn"
+
+
+  # ============================================================
+  # NAXSI WAF BLOCK  ("NAXSI_FMT:" in the error log)
+  # e.g.  ... [error] 1278#1278: *1817726 NAXSI_FMT: ip=203.0.113.7&server=www.example.com&uri=/index.css&vers=0.56&total_processed=95608&total_blocked=5329&config=block&cscore0=$XSS&score0=152&zone0=HEADERS&id0=1315&var_name0=cookie, client: 203.0.113.7, server: www.example.com, request: "GET /index.css?x HTTP/2.0", host: "www.example.com", referrer: "https://www.example.com/"
+  # The first matched rule (cscore0/score0/zone0/id0/var_name0) is broken
+  # out; the full FMT blob stays in nginx.naxsi.fmt so multi-rule hits
+  # (cscore1, zone1, ...) are not lost. Accepts "config=block" (naxsi 1.x)
+  # and the older "learning=N ... block=N" layouts.
+  # ============================================================
+
+  - name: "nginx_naxsi_block"
+
+    prematch: "NAXSI_FMT"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): \*(?P<connection>\d+) NAXSI_FMT: (?P<naxsi_fmt>ip=(?P<naxsi_ip>[^&]*)&server=(?P<naxsi_server>[^&]*)&uri=(?P<naxsi_uri>[^,]*?)&(?:learning=(?P<naxsi_learning>\d)&)?vers=(?P<naxsi_vers>[^&]*)&total_processed=(?P<naxsi_total_processed>\d+)&total_blocked=(?P<naxsi_total_blocked>\d+)&(?:config|block)=(?P<naxsi_action>[^&,]*)(?:&cscore0=(?P<naxsi_cscore0>[^&]*)&score0=(?P<naxsi_score0>\d+))?(?:[^,]*?zone0=(?P<naxsi_zone0>[^&]*)&id0=(?P<naxsi_id0>\d+)&var_name0=(?P<naxsi_var_name0>[^&,]*))?[^,]*), client: (?P<client_ip>[\da-fA-F\.:]+), server: (?P<server>[^,]+), request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?'
+
+    timestamp:
+      group: timestamp
+      format: nginx_error
+      tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+      connection: "nginx.connection_id"
+
+      client_ip: "source.ip"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      server: "server.domain"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+      naxsi_fmt: "nginx.naxsi.fmt"
+      naxsi_uri: "nginx.naxsi.uri"
+      naxsi_learning: "nginx.naxsi.learning|int"
+      naxsi_vers: "nginx.naxsi.version"
+      naxsi_total_processed: "nginx.naxsi.total_processed|int"
+      naxsi_total_blocked: "nginx.naxsi.total_blocked|int"
+      naxsi_action: "nginx.naxsi.mode"
+
+      naxsi_cscore0: "rule.category"
+      naxsi_score0: "nginx.naxsi.score|int"
+      naxsi_zone0: "nginx.naxsi.zone"
+      naxsi_id0: "rule.id"
+      naxsi_var_name0: "nginx.naxsi.var_name"
+
+    static:
+      event.category: "web"
+      event.type: "denied"
+      event.action: "waf_block"
+      event.outcome: "failure"
+      event.reason: "naxsi"
+      rule.ruleset: "naxsi"
+
+
+  # ============================================================
+  # CATCH-ALL FOR EVERY OTHER NGINX ERROR-LOG LINE  -- keep LAST
+  # Any error-log-shaped line no pattern above understood (open() failed,
+  # client timed out, no live upstreams, [notice] lines, ...), plain or
+  # inside the rsyslog "message repeated" wrapper, stops filling the DLQ;
+  # the text lands in error.message (aggregate on it to find which shapes
+  # deserve a dedicated pattern next). "server:" may be a server_name OR
+  # a listen socket on pre-request messages, hence server.address.
+  # ============================================================
+
+  - name: "nginx_error_unclassified"
+
+    prematch: "#"
+    regex: '^(?P<syslog_timestamp>\S+) (?P<syslog_host>\S+) (?P<service>\S+): (?:message repeated (?P<repeat_count>\d+) times: \[ )?(?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<log_level>\w+)\] (?P<pid>\d+)#(?P<tid>\d+): (?:\*(?P<connection>\d+) )?(?P<message>.+?)(?:, client: (?P<client_ip>[\da-fA-F\.:]+))?(?:, server: (?P<server>[^,]+?))?(?:, request: "(?P<method>\w+) (?P<path>[^\s]+)(?: HTTP/(?P<http_version>[\d\.]+)")?)?(?:, subrequest: "(?P<subrequest>[^"]+)"?)?(?:, upstream: "(?P<upstream>[^"]+)"?)?(?:, host: "(?P<host_header>[^"]+)"?)?(?:, referrer: "(?P<referrer>[^"]+)"?)?\]?$'
+
+    timestamp:
+      group: timestamp
+      format: nginx_error
+      tz: "assume_utc"  # acknowledged: host logs UTC. EDIT to the real offset (e.g. "+05:30") if it does not.
+
+    mapping:
+      syslog_timestamp: "event.created"
+      syslog_host: "host.name"
+      service: "service.name"
+
+      timestamp: "event.original_time"
+      log_level: "log.level"
+
+      pid: "process.pid|int"
+      tid: "process.thread.id|int"
+      connection: "nginx.connection_id"
+
+      repeat_count: "event.repeat_count|int"
+
+      message: "error.message"
+
+      client_ip: "source.ip"
+      server: "server.address"
+
+      method: "http.request.method"
+      path: "url.path"
+      http_version: "http.version"
+
+      subrequest: "nginx.subrequest"
+      upstream: "nginx.upstream"
+      host_header: "url.domain"
+
+      referrer: "http.request.referrer"
+
+    static:
+      event.category: "web"
+      event.type: "error"
+      event.action: "nginx_error_unclassified"
+      event.outcome: "unknown"

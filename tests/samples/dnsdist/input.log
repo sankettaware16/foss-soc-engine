@@ -1,0 +1,9 @@
+2026-09-07T10:15:30.123456+00:00 ns1.example.com dnsdist[1234]: Packet from 203.0.113.10:53124 for www.example.com. A with id 4242
+2026-09-07T10:15:30.223456+00:00 ns1.example.com dnsdist[1234]: Answer to 203.0.113.10:53124 for www.example.com. A (NoError) with id 4242
+2026-09-07T10:15:31.000001+00:00 ns1.example.com dnsdist[1234]: Packet from 198.51.100.7:41000 for . SOA with id 7
+2026-09-07T10:15:31.100001+00:00 ns1.example.com dnsdist[1234]: Packet from 198.51.100.7:41001 for . TYPE36701 with id 8
+2026-09-07T10:15:32.500000+00:00 ns1.example.com dnsdist[1234]: message repeated 3 times: [ Packet from [2001:db8::1]:53124 for mail.example.com. AAAA with id 999]
+2026-09-07T10:15:32.600000+00:00 ns1.example.com dnsdist[1234]: message repeated 2 times: [ Answer to [2001:db8::1]:53124 for mail.example.com. AAAA (NXDomain) with id 999]
+2026-09-07T10:15:40.000000+00:00 ns1.example.com dnsdist-primary[1234]: PowerDNS Security Update 2026-01: upgrade to a supported dnsdist release
+2026-09-07T10:15:45.000000+00:00 ns1.example.com dnsdist[1234]: Marking downstream 198.51.100.53:53 as 'down'
+2026-09-07T10:15:46.000000+00:00 ns1.example.com dnsdist[1234]: Configuration file '/etc/dnsdist/dnsdist.conf' (re)loaded
