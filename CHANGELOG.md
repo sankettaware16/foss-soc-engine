@@ -20,6 +20,15 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **FreeRADIUS parser** (`rules/radius.yaml`): covers the full observed
+  event taxonomy of a `radiusd` log — `Login OK` / `Login incorrect` (with
+  the parenthesised failure reason, including reasons that themselves contain
+  parentheses), proxy / home-server failures, home-server alive/zombie
+  transitions, status-check replies and timeouts, eduroam F-TICKS accounting
+  records, EAP/TLS subsystem messages, and a last-resort daemon catch-all so
+  nothing dead-letters. Authentication maps to `user.name` /
+  `source.address` / `destination.*`, RADIUS specifics to a custom `radius.*`
+  namespace. Ships a golden corpus and a `radiusd: "radius"` mapping example.
 - **dnsdist parser** (`rules/dns.yaml`): PowerDNS dnsdist verbose query/answer
   lines (root-zone names, bracketed IPv6 clients), rsyslog
   "message repeated" wrappers, security-advisory notices, and a daemon-message

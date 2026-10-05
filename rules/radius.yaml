@@ -1,0 +1,252 @@
+pattern_name: "radius"
+strategy: "multi_match"
+
+# FreeRADIUS (radiusd) log. rsyslog prefixes each line with an ISO-8601 stamp
+# carrying its offset, which is the event time. If a host stamps local time
+# mislabeled +00:00, capture only the seconds and add a tz override, as
+# documented for postfix.
+timestamp:
+  regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\S+)'
+  format: iso8601
+
+# Every line is "TS HOST radiusd[PID]:" then an optional "(request-id)" and
+# the message. Auth lines carry the request id; operational lines may not.
+patterns:
+
+  # Successful authentication.
+  # Login OK: [user] (from client <nas> port <n> [cli <id>] [via TLS tunnel])
+  - name: "login_ok"
+    prematch: "Login OK"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?Login OK: \[(?P<user>[^\]]*)\] \(from client (?P<client>\S+) port (?P<nas_port>\d+)(?: cli (?P<cli>\S+?))?(?: via (?P<tunnel>TLS tunnel))?\)'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      user: "user.name"
+      client: "source.address"
+      nas_port: "radius.nas_port|int"
+      cli: "radius.calling_station_id"
+      tunnel: "radius.tunnel"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "start"
+      event.action: "radius_login"
+      event.outcome: "success"
+
+  # Failed authentication. The reason (when present) sits in parentheses and
+  # may itself contain parentheses, so it is captured up to the "): [" that
+  # precedes the username.
+  # Login incorrect [(reason)]: [user] (from client <nas> port <n> ...)
+  - name: "login_incorrect"
+    prematch: "Login incorrect"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?Login incorrect(?: \((?P<reason>.+?)\))?: \[(?P<user>[^\]]*)\] \(from client (?P<client>\S+) port (?P<nas_port>\d+)(?: cli (?P<cli>\S+?))?(?: via (?P<tunnel>TLS tunnel))?\)'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      reason: "error.message"
+      user: "user.name"
+      client: "source.address"
+      nas_port: "radius.nas_port|int"
+      cli: "radius.calling_station_id"
+      tunnel: "radius.tunnel"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "start"
+      event.action: "radius_login"
+      event.outcome: "failure"
+
+  # Proxy to a home server produced no response.
+  - name: "proxy_request_failed"
+    prematch: "Failing proxied request"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?ERROR: Failing proxied request for user "(?P<user>[^"]*)", due to lack of any response from home server (?P<home_ip>\S+) port (?P<home_port>\d+)'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      user: "user.name"
+      home_ip: "destination.address"
+      home_port: "destination.port|int"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "network"
+      event.type: "error"
+      event.action: "proxy_request_failed"
+      event.outcome: "failure"
+
+  # A home server recovered.
+  - name: "home_server_alive"
+    prematch: "alive"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?Marking home server (?P<home_ip>\S+) port (?P<home_port>\d+) alive'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      home_ip: "destination.address"
+      home_port: "destination.port|int"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "network"
+      event.type: "info"
+      event.action: "home_server_alive"
+      event.outcome: "success"
+
+  # A home server stopped responding.
+  - name: "home_server_zombie"
+    prematch: "as zombie"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?Marking home server (?P<home_ip>\S+) port (?P<home_port>\d+) as zombie \(it has not responded in (?P<unresponsive_sec>[\d.]+) seconds\)'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      home_ip: "destination.address"
+      home_port: "destination.port|int"
+      unresponsive_sec: "radius.unresponsive_sec|float"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "network"
+      event.type: "error"
+      event.action: "home_server_zombie"
+      event.outcome: "failure"
+
+  # Reply to a home-server status check.
+  - name: "status_check_response"
+    prematch: "Received response to status check"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?Received response to status check (?P<check_id>\d+) ID (?P<packet_id>\d+) \((?P<sequence>\d+) in current sequence\)'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      check_id: "radius.status_check.id"
+      packet_id: "radius.status_check.packet_id|int"
+      sequence: "radius.status_check.sequence|int"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "network"
+      event.type: "info"
+      event.action: "status_check_response"
+      event.outcome: "success"
+
+  # No reply to a home-server status check.
+  - name: "status_check_no_response"
+    prematch: "No response to status check"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?No response to status check (?P<check_id>\d+) ID (?P<packet_id>\d+) for home server (?P<home_ip>\S+) port (?P<home_port>\d+)'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      check_id: "radius.status_check.id"
+      packet_id: "radius.status_check.packet_id|int"
+      home_ip: "destination.address"
+      home_port: "destination.port|int"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "network"
+      event.type: "error"
+      event.action: "status_check_no_response"
+      event.outcome: "failure"
+
+  # eduroam F-TICKS accounting record.
+  - name: "f_ticks"
+    prematch: "F-TICKS"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+F-TICKS/eduroam/(?P<version>[\d.]+)#REALM=(?P<realm>[^#]*)#VISCOUNTRY=(?P<viscountry>[^#]*)#VISINST=(?P<visinst>[^#]*)#CSI=(?P<csi>[^#]*)#RESULT=(?P<result>[^#]*)#'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      version: "radius.fticks.version"
+      realm: "radius.fticks.realm"
+      viscountry: "radius.fticks.visited_country"
+      visinst: "radius.fticks.visited_institution"
+      csi: "radius.fticks.calling_station_id"
+      result: "radius.fticks.result"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "info"
+      event.action: "fticks"
+
+  # EAP / TLS subsystem messages (alerts, session errors). Kept AFTER the
+  # auth patterns so a "Login incorrect (eap_peap: ...)" line is an auth
+  # event, not a bare subsystem message.
+  - name: "subsystem_message"
+    prematch: ["eap_peap:", "eap_ttls:", "eap:", "tls:"]
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?(?P<module>eap_peap|eap_ttls|eap|tls): (?P<message>.+)$'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      module: "radius.module"
+      message: "message"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "network"
+      event.type: "info"
+      event.action: "subsystem_message"
+
+  # Catch-all for every other radiusd line -- keep LAST so it never steals a
+  # line a specific pattern above should own. The text lands in message.
+  - name: "daemon_message"
+    prematch: "radiusd"
+    regex: '^\S+ (?P<host>\S+) radiusd\[(?P<pid>\d+)\]:\s+(?:\((?P<reqid>\d+)\)\s+)?(?P<message>.+)$'
+    mapping:
+      host: ["host.name", "observer.hostname"]
+      pid: "process.pid|int"
+      reqid: "radius.request_id"
+      message: "message"
+    static:
+      process.name: "radiusd"
+      observer.vendor: "FreeRADIUS"
+      observer.product: "radiusd"
+      service.type: "radius"
+      network.protocol: "radius"
+      event.kind: "event"
+      event.category: "process"
+      event.type: "info"
+      event.action: "daemon_message"

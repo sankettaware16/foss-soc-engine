@@ -88,6 +88,7 @@ program_mapping:
   postfix: "postfix"
   squid: "squid_proxy_access"
   dns: "dnsdist"
+  radiusd: "radius"
 
   # CHAINS: a source may also map to a LIST of rules - the engine tries them
   # in order and the first rule that handles a line wins. Use this when one
