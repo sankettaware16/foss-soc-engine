@@ -7,3 +7,9 @@ Jul  9 10:00:04 proxyhost (squid-1)[123]: this line matches nothing
 2026-08-20T15:41:16+00:00 proxyhost2 (squid-3)[2013]: 1787220676.763 5 10.0.0.44:55821 203.0.113.79:0 TCP_MISS/503 3958 GET http://[::1]/DevMgmt/DiscoveryTree.xml - ORIGINAL_DST/[::1] text/html
 2026-08-20T15:40:42+00:00 proxyhost2 (squid-4)[1950]: 1787220642.179 1981 10.0.0.36:52554 203.0.113.56:22631 TCP_MISS/200 308 GET http://foo_bar.example.com/x - ORIGINAL_DST/- application/json
 2026-08-20T16:00:00+00:00 proxyhost2 (squid-1): 1787222400.123 15 10.0.0.50:40000 203.0.113.80:3128 TCP_MISS/200 1024 GET http://www.example.com/ - HIER_DIRECT/93.184.216.34 text/html
+2026-10-06T09:48:53+00:00 proxyhost2 (squid-3): 1791260333.001 0 10.0.0.70:57420 -:- NONE_NONE/000 0 - error:transaction-end-before-headers - HIER_NONE/- -
+2026-10-06T09:48:54+00:00 proxyhost2 (squid-8): 1791260334.043 0 10.0.0.70:57551 -:- NONE_NONE/400 3389 - error:invalid-request - HIER_NONE/- text/html
+2026-10-06T09:50:20+00:00 proxyhost2 (squid-1): 1791260420.709 0 10.0.0.71:60128 -:- NONE_NONE/400 3569 - * - HIER_NONE/- text/html
+2026-10-06T09:51:03+00:00 proxyhost2 (squid-4): 1791260463.253 0 10.0.0.72:55752 -:- NONE_NONE/409 3701 CONNECT connectivity.example.com:443 - HIER_NONE/- text/html
+2026-10-06T09:52:05+00:00 proxyhost2 (squid-5): 1791260525.446 0 10.0.0.73:52898 -:- NONE_NONE_ABORTED/000 0 GET http://probe.example.com/success.txt? - HIER_NONE/- -
+2026-10-06T09:58:05+00:00 proxyhost2 (squid-4): 1791260885.500 543 10.0.0.74:65101 203.0.113.81:27218 TCP_MISS/404 1516 BITS_POST http://updates.example.net/eventlog/report.zip - ORIGINAL_DST/updates.example.net text/html

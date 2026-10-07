@@ -258,7 +258,7 @@ patterns:
 
   - name: "none_http_fail"
     prematch: "HIER_NONE"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_NONE)?(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -286,7 +286,7 @@ patterns:
 
   - name: "none_connect_fail"
     prematch: "CONNECT"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>CONNECT)\s+(?P<dst>[^:\s]+):(?P<dst_port>\d+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_NONE)?(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>CONNECT)\s+(?P<dst>[^:\s]+):(?P<dst_port>\d+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -315,7 +315,7 @@ patterns:
 
   - name: "none_upstream_fail"
     prematch: "HIER_NONE"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>\S+)\s+(?P<dst>[^:\s]+):(?P<dst_port>\d+)\s+-\s+HIER_NONE/-\s+-$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_NONE)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>\S+)\s+(?P<dst>[^:\s]+):(?P<dst_port>\d+)\s+-\s+HIER_NONE/-\s+-$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -343,7 +343,7 @@ patterns:
 
   - name: "none_http2_preface"
     prematch: "PRI"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>PRI)\s+\*\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_NONE)?(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>PRI)\s+\*\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -370,7 +370,7 @@ patterns:
 
   - name: "none_error_request"
     prematch: "error:"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+\S+\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_NONE)?(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+\S+\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -397,7 +397,7 @@ patterns:
 
   - name: "none_error"
     prematch: "error:"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+\S+\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+-$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_NONE)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+\S+\s+(?P<reason>error:\S+)\s+-\s+HIER_NONE/-\s+-$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -421,13 +421,45 @@ patterns:
       event.outcome: "failure"
       event.action_detail: "malformed_transaction"
 
+  # LAST-RESORT catch-all for client-served NONE transactions the specific
+  # none_* patterns above refuse (odd method/url like "- *", future NONE
+  # variants). -:- client-only endpoint, any NONE tag, HIER_NONE. Placed after
+  # the specific none_* patterns so they win and classify first.
+  - name: "none_request_fallback"
+    prematch: "HIER_NONE"
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE[A-Z_]*)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>\S+)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    mapping:
+      host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
+      proc_name: "process.name"
+      pid: "process.pid|int"
+      duration: "event.duration|int"
+      src_ip: "source.ip"
+      src_port: "source.port|int"
+      action: "event.action"
+      status: "http.response.status_code|int"
+      bytes: "source.bytes|int"
+      method: "http.request.method"
+      url: "url.original"
+      content_type: "http.response.mime_type"
+    static:
+      observer.vendor: "Squid"
+      observer.product: "Squid Proxy"
+      observer.type: "proxy"
+      service.type: "proxy"
+      network.transport: "tcp"
+      event.category: "web"
+      event.type: "error"
+      event.kind: "event"
+      event.outcome: "failure"
+      event.action_detail: "request_failed"
+
   # LAST-RESORT catch-all for proxied HTTP lines the patterns above refuse:
   # any hierarchy tag, any original-destination token (IPv6, "-", odd hosts
   # -> destination.address, engine classifies). Must stay the FINAL TCP_
   # pattern so every specific shape wins first.
   - name: "http_request_fallback"
     prematch: "TCP_"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>[A-Z]+)\s+(?P<url>\S+)\s+\S+\s+(?P<hierarchy>[A-Z_]+)/(?P<orig_dst>\S+)\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>[A-Z_]+)\s+(?P<url>\S+)\s+\S+\s+(?P<hierarchy>[A-Z_]+)/(?P<orig_dst>\S+)\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
