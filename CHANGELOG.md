@@ -20,6 +20,25 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **SSO parser** (`rules/sso.yaml`): single sign-on web app (`ssoN`) and its
+  LDAP bind proxy (`ldap-proxyN`), whose syslog lines carry a JSON body.
+  Classifies every observed `code` — LDAP proxy attempt/success/failure,
+  password/2FA/U2F/device/token logins and their failures, OAuth/SAML grants
+  to client apps, logouts, session switches, 2FA settings changes and user
+  notifications — with a catch-all so unknown codes still parse. JSON keys
+  are read order-independently (new keys never dead-letter); the two
+  high-volume LDAP proxy codes take a cheap single-pass fast path. Maps to
+  `user.name`, `source.address` (IPv4-mapped `::ffff:` prefix stripped),
+  `user_agent.original`, `event.reason`, `error.message`; SSO specifics
+  (client id, session, tracking ids) to a custom `sso.*` namespace.
+- **policyd-spf parser** (`rules/policyd_spf.yaml`): pypolicyd-spf on mail
+  relays — SPF verdicts per identity (Pass / Fail+Softfail / other with
+  `event.outcome`), prepended `Received-SPF` headers, whitelist skips, `550`
+  rejects (reason + the openspf URL's scope/sender/client/recipient), pyspf
+  debug lines, and a catch-all. Maps sender/recipient to
+  `email.from.address` / `email.to.address`, SPF specifics to `spf.*`.
+- Index template regenerated (`elasticsearch/soc-index-template.json`) to
+  cover the dnsdist, nginx, radius, sso and policyd-spf fields.
 - **FreeRADIUS parser** (`rules/radius.yaml`): covers the full observed
   event taxonomy of a `radiusd` log — `Login OK` / `Login incorrect` (with
   the parenthesised failure reason, including reasons that themselves contain

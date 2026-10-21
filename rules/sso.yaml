@@ -1,0 +1,202 @@
+pattern_name: "sso"
+strategy: "multi_match"
+
+# Single sign-on server + its LDAP proxy. Every line is
+#   "TS HOST PROGRAM[PID]: {json}"
+# where PROGRAM is the SSO web app (sso1, sso2, ...) or the LDAP bind proxy
+# (ldap-proxy1, ...) and the JSON body always carries "code" (what happened),
+# "level" and "message", plus whichever of the optional keys below apply.
+#
+# The body is read with one look-ahead per key, so key ORDER does not matter
+# and a key added by a future SSO release is simply ignored (no DLQ storm).
+# Patterns only differ in which "code" values they accept and how the event
+# is classified; first match wins, the catch-all keeps unknown codes parsed.
+
+# rsyslog prefixes each line with an ISO-8601 stamp (with offset). If the SSO
+# hosts stamp local time mislabeled +00:00, capture only the seconds and add
+# a tz override, as documented for postfix.
+timestamp:
+  regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\S+)'
+  format: iso8601
+
+vars:
+  # syslog header up to the opening brace of the JSON body
+  hdr: '^\S+ (?P<host>\S+) (?P<proc>[A-Za-z][\w.-]*)\[(?P<pid>\d+)\]: \{'
+  # optional JSON keys (string values may contain \" escapes)
+  fields: '(?=(?:.*?"auth_type":"(?P<auth_type>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"client_id":"(?P<client_id>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"extra":"(?P<extra>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"identity":"(?P<identity>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"ip":"(?:::ffff:)?(?P<ip>[^"]*)")?)(?=(?:.*?"level":"(?P<level>[^"]*)")?)(?=(?:.*?"message":"(?P<message>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"reason":"(?P<reason>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"remember":(?P<remember>\d+))?)(?=(?:.*?"sess_id":"(?P<sess_id>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"sess_type":(?P<sess_type>\d+))?)(?=(?:.*?"sess_user":"(?P<sess_user>(?:[^"\\]|\\.)*)")?)(?=(?:(?!.*?"target_user":")(?:.*?"sess_user":"(?!anonymous")(?P<sess_login>(?:[^"\\]|\\.)*)"))?)(?=(?:.*?"target_dn":"(?P<target_dn>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"target_sess_id":"(?P<target_sess_id>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"target_user":"(?P<target_user>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"track_id":"(?P<track_id>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"track_type":"(?P<track_type>(?:[^"\\]|\\.)*)")?)(?=(?:.*?"type":"(?P<type>[^"]*)")?)(?=(?:.*?"user_agent":"(?P<user_agent>(?:[^"\\]|\\.)*)")?)'
+
+# One mapping shared by every pattern (YAML anchor). user.name is the account
+# being authenticated/acted on: target_user when present, otherwise the
+# logged-in session user (sess_login, never "anonymous").
+x-sso-mapping: &sso_mapping
+  host: ["host.name", "observer.hostname"]
+  proc: "process.name"
+  pid: "process.pid|int"
+  code: "event.action"
+  auth_type: "sso.auth_type"
+  client_id: "sso.client_id"
+  extra: "error.message"
+  identity: "user.email"
+  ip: "source.address"
+  level: "log.level"
+  message: "message"
+  reason: "event.reason"
+  remember: "sso.remember|int"
+  sess_id: "sso.session.id"
+  sess_type: "sso.session.type|int"
+  sess_user: "sso.session.user"
+  sess_login: "user.name"
+  target_dn: "sso.target_dn"
+  target_sess_id: "sso.session.target_id"
+  target_user: "user.name"
+  track_id: "sso.track.id"
+  track_type: "sso.track.type"
+  type: "sso.type"
+  user_agent: "user_agent.original"
+
+patterns:
+
+  # LDAP proxy: a client app (e.g. the mail service) asks to bind as a user.
+  # These two codes are ~95% of the volume, so their exact (sorted-key) shape
+  # is matched first by a cheap single-pass regex; any other key layout falls
+  # through to the key-order-independent patterns below.
+  - name: "ldap_proxy_auth_attempt_fast"
+    prematch: '"code":"ldap_proxy_auth_attempt"'
+    regex: '%{hdr}"code":"(?P<code>ldap_proxy_auth_attempt)","ip":"(?:::ffff:)?(?P<ip>[^"]*)","level":"(?P<level>[^"]*)","message":"(?P<message>(?:[^"\\]|\\.)*)","target_dn":"(?P<target_dn>(?:uid=(?P<dn_uid>[^,"\\]*))?(?:[^"\\]|\\.)*)","type":"(?P<type>[^"]*)"\}$'
+    mapping: &ldap_attempt_mapping
+      <<: *sso_mapping
+      dn_uid: "user.name"
+    static: &ldap_attempt_static
+      service.type: "sso"
+      network.protocol: "ldap"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "start"
+      event.outcome: "unknown"
+
+  - name: "ldap_proxy_auth_success_fast"
+    prematch: '"code":"ldap_proxy_auth_success"'
+    regex: '%{hdr}"auth_type":"(?P<auth_type>(?:[^"\\]|\\.)*)","client_id":"(?P<client_id>(?:[^"\\]|\\.)*)","code":"(?P<code>ldap_proxy_auth_success)","ip":"(?:::ffff:)?(?P<ip>[^"]*)","level":"(?P<level>[^"]*)","message":"(?P<message>(?:[^"\\]|\\.)*)","target_user":"(?P<target_user>(?:[^"\\]|\\.)*)","type":"(?P<type>[^"]*)"\}$'
+    mapping: *sso_mapping
+    static: &ldap_success_static
+      service.type: "sso"
+      network.protocol: "ldap"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "start"
+      event.outcome: "success"
+
+  - name: "ldap_proxy_auth_attempt"
+    prematch: '"code":"ldap_proxy_auth_attempt"'
+    regex: '%{hdr}(?=.*?"code":"(?P<code>ldap_proxy_auth_attempt)")(?=(?:.*?"target_dn":"uid=(?P<dn_uid>[^,"\\]*))?)%{fields}'
+    mapping: *ldap_attempt_mapping
+    static: *ldap_attempt_static
+
+  - name: "ldap_proxy_auth_success"
+    prematch: '"code":"ldap_proxy_auth_success"'
+    regex: '%{hdr}(?=.*?"code":"(?P<code>ldap_proxy_auth_success)")%{fields}'
+    mapping: *sso_mapping
+    static: *ldap_success_static
+
+  - name: "ldap_proxy_authfail"
+    prematch: '"code":"ldap_proxy_authfail"'
+    regex: '%{hdr}(?=.*?"code":"(?P<code>ldap_proxy_authfail)")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      network.protocol: "ldap"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "start"
+      event.outcome: "failure"
+
+  # Any failed step: login, 2FA/challenge, token, OAuth/SAML authorize,
+  # backend LDAP error (user_login_fail, client_token_fail, ldap_auth_error...)
+  - name: "sso_auth_failure"
+    prematch: ['_fail"', '_error"']
+    regex: '%{hdr}(?=.*?"code":"(?P<code>[a-z0-9_]*(?:_fail|_error))")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "start"
+      event.outcome: "failure"
+
+  # Successful login / password / 2FA (TOTP, U2F, device push) / token auth.
+  - name: "sso_auth_success"
+    prematch: ['_success"', '"code":"user_access_token_auth"']
+    regex: '%{hdr}(?=.*?"code":"(?P<code>[a-z0-9_]*_success|user_access_token_auth)")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "start"
+      event.outcome: "success"
+
+  # OAuth / SAML grants handed to client applications (sso.client_id).
+  - name: "sso_authorize"
+    prematch: ['"code":"user_authorize"', '"code":"user_saml_authorize"', '"code":"client_token"', '"code":"client_get_user"']
+    regex: '%{hdr}(?=.*?"code":"(?P<code>user_authorize|user_saml_authorize|client_token|client_get_user)")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "info"
+      event.outcome: "success"
+
+  - name: "sso_logout"
+    prematch: '"code":"user_logout'
+    regex: '%{hdr}(?=.*?"code":"(?P<code>user_logout(?:_all)?)")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      event.kind: "event"
+      event.category: "session"
+      event.type: "end"
+      event.outcome: "success"
+
+  - name: "sso_session"
+    prematch: '"code":"user_session_'
+    regex: '%{hdr}(?=.*?"code":"(?P<code>user_session_[a-z0-9_]+)")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      event.kind: "event"
+      event.category: "session"
+      event.type: "info"
+
+  # Account security settings: 2FA token / TOTP / U2F (de)registration.
+  - name: "sso_settings_change"
+    prematch: '"code":"user_settings_'
+    regex: '%{hdr}(?=.*?"code":"(?P<code>user_settings_[a-z0-9_]+)")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      event.kind: "event"
+      event.category: "iam"
+      event.type: "change"
+      event.outcome: "success"
+
+  # Notifications to the user: login mail, SMS OTP, device push.
+  - name: "sso_notification"
+    prematch: ['"code":"mail_notif"', '"code":"user_sms_send"', '"code":"user_device_auth_publish"']
+    regex: '%{hdr}(?=.*?"code":"(?P<code>mail_notif|user_sms_send|user_device_auth_publish)")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      event.kind: "event"
+      event.category: "authentication"
+      event.type: "info"
+
+  # LAST: any other code (clear_cache, codes added by future releases).
+  - name: "sso_event"
+    prematch: '"code":"'
+    regex: '%{hdr}(?=.*?"code":"(?P<code>[^"]+)")%{fields}'
+    mapping: *sso_mapping
+    static:
+      service.type: "sso"
+      event.kind: "event"
+      event.type: "info"

@@ -1,0 +1,22 @@
+2026-10-21T13:22:05+00:00 relay1 policyd-spf[31060]: spfcheck: pyspf result: "['Pass', 'sender SPF authorized', 'mailfrom']"
+2026-10-21T13:22:05+00:00 relay1 policyd-spf[31060]: Pass; identity=mailfrom; client-ip=198.51.100.200; helo=mail-out.example.net; envelope-from=newsletter@example.net; receiver=alice@example.edu
+2026-10-21T13:22:05+00:00 relay1 policyd-spf[31060]: prepend Received-SPF: Pass (mailfrom) identity=mailfrom; client-ip=198.51.100.200; helo=mail-out.example.net; envelope-from=newsletter@example.net; receiver=alice@example.edu
+2026-10-21T13:22:06+00:00 relay2 policyd-spf[3852]: spfcheck: pyspf result: "['None', '', 'helo']"
+2026-10-21T13:22:06+00:00 relay2 policyd-spf[3852]: None; identity=no SPF record; client-ip=198.51.100.201; helo=out.example.org; envelope-from=<>; receiver=bob01@example.edu
+2026-10-21T13:22:06+00:00 relay2 policyd-spf[3852]: prepend Received-SPF: None (no SPF record) identity=no SPF record; client-ip=198.51.100.201; helo=out.example.org; envelope-from=<>; receiver=bob01@example.edu
+2026-10-21T13:22:07+00:00 relay3 policyd-spf[4102]: Pass; identity=helo; client-ip=203.0.113.50; helo=smtp.example.com; envelope-from=info@example.com; receiver=carol@example.edu
+2026-10-21T13:22:07+00:00 relay3 policyd-spf[4102]: spfcheck: pyspf result: "['Temperror', 'SPF Temporary Error: DNS Ran off end of data', 'mailfrom']"
+2026-10-21T13:22:07+00:00 relay3 policyd-spf[4102]: Temperror; identity=mailfrom; client-ip=203.0.113.50; helo=smtp.example.com; envelope-from=bounce-123@example.com; receiver=carol@example.edu
+2026-10-21T13:22:07+00:00 relay3 policyd-spf[4102]: prepend Received-SPF: Temperror (mailfrom) identity=mailfrom; client-ip=203.0.113.50; helo=smtp.example.com; envelope-from=bounce-123@example.com; receiver=carol@example.edu
+2026-10-21T13:22:08+00:00 relay4 policyd-spf[12164]: Softfail; identity=mailfrom; client-ip=192.0.2.60; helo=mail.example.org; envelope-from=offers@example.org; receiver=dave@example.edu
+2026-10-21T13:22:08+00:00 relay4 policyd-spf[12164]: prepend Received-SPF: Softfail (mailfrom) identity=mailfrom; client-ip=192.0.2.60; helo=mail.example.org; envelope-from=offers@example.org; receiver=dave@example.edu
+2026-10-21T13:22:09+00:00 relay1 policyd-spf[28815]: spfcheck: pyspf result: "['Fail', 'SPF fail - not authorized', 'mailfrom']"
+2026-10-21T13:22:09+00:00 relay1 policyd-spf[28815]: Fail; identity=mailfrom; client-ip=192.0.2.61; helo=[192.0.2.61]; envelope-from=erin@example.edu; receiver=erin@example.edu
+2026-10-21T13:22:09+00:00 relay1 policyd-spf[28815]: 550 5.7.23 Message rejected due to: Receiver policy for SPF Fail. Please see http://www.openspf.net/Why?s=mfrom;id=erin@example.edu;ip=192.0.2.61;r=erin@example.edu
+2026-10-21T13:22:10+00:00 relay2 policyd-spf[4593]: Permerror; identity=mailfrom; client-ip=192.0.2.62; helo=bulk.example.info; envelope-from=noreply@example.info; receiver=frank@example.edu
+2026-10-21T13:22:10+00:00 relay2 policyd-spf[4593]: 550 5.7.24 Message rejected due to: SPF Permanent Error: Two or more type TXT spf records found.. Please see http://www.openspf.net/Why?s=mfrom;id=noreply@example.info;ip=192.0.2.62;r=frank@example.edu
+2026-10-21T13:22:11+00:00 relay3 policyd-spf[5988]: Fail; identity=Receiver policy for SPF Fail; client-ip=192.0.2.63; helo=example.edu; envelope-from=lab@example.edu; receiver=lab@example.edu
+2026-10-21T13:22:12+00:00 relay4 policyd-spf[13005]: prepend X-Comment: SPF skipped for PTR whitelisted relay domain - client-ip=203.0.113.70; helo=relay.mail.example.com; envelope-from=grace@example.com; receiver=grace@example.edu
+2026-10-21T13:22:13+00:00 relay1 policyd-spf[29287]: Neutral; identity=helo; client-ip=198.51.100.71; helo=promo.example.biz; envelope-from=support@example.biz; receiver=heidi@example.edu
+2026-10-21T13:22:14+00:00 relay2 policyd-spf[15318]: spfcheck: pyspf result: "['Permerror', "SPF Permanent Error: Non-ascii characters found: b'v=spf1 ip4:192.0.2.80 a mx\\xc2\\xa0-all'", 'helo']"
+2026-10-21T13:22:15+00:00 relay3 policyd-spf[1]: policyd-spf started: configuration file /etc/postfix-policyd-spf-python/policyd-spf.conf

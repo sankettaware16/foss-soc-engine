@@ -1,0 +1,142 @@
+pattern_name: "policyd_spf"
+strategy: "multi_match"
+
+# pypolicyd-spf (policyd-spf), the Postfix SPF policy service on mail relays.
+# Every line is "TS HOST policyd-spf[PID]: <message>". Per checked message it
+# logs a pyspf debug line, the verdict line, and either the Received-SPF
+# header it prepends or the 550 reject it returns to the sending server.
+
+# rsyslog prefixes each line with an ISO-8601 stamp (with offset). If the
+# relays stamp local time mislabeled +00:00, capture only the seconds and add
+# a tz override, as documented for postfix.
+timestamp:
+  regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\S+)'
+  format: iso8601
+
+vars:
+  hdr: '^\S+ (?P<host>\S+) (?P<proc>policyd-spf)\[(?P<pid>\d+)\]: '
+  # "client-ip=..; helo=..; envelope-from=..; receiver=.." (from "<>" = bounce)
+  conn: 'client-ip=(?P<client_ip>[^;]*); helo=(?P<helo>[^;]*); envelope-from=(?:<>|(?P<from>[^;]*)); receiver=(?P<receiver>\S*)'
+
+x-spf-mapping: &spf_mapping
+  host: ["host.name", "observer.hostname"]
+  proc: "process.name"
+  pid: "process.pid|int"
+  result: "spf.result"
+  identity: "spf.identity"
+  scope: "spf.scope"
+  explanation: "spf.explanation"
+  client_ip: "source.address"
+  helo: "spf.helo"
+  from: "email.from.address"
+  receiver: "email.to.address"
+  comment: "event.reason"
+  reason: "event.reason"
+  smtp_code: "spf.smtp_code|int"
+  smtp_status: "spf.smtp_status"
+  url: "url.original"
+
+patterns:
+
+  # Verdict: "<Result>; identity=<mailfrom|helo|no SPF record|...>; client-ip=..."
+  - name: "spf_pass"
+    prematch: "Pass; identity="
+    regex: '%{hdr}(?P<result>Pass); identity=(?P<identity>[^;]*); %{conn}'
+    mapping: *spf_mapping
+    static:
+      service.type: "smtp"
+      event.kind: "event"
+      event.category: "email"
+      event.type: "info"
+      event.action: "spf_check"
+      event.outcome: "success"
+
+  - name: "spf_fail"
+    prematch: ["Fail; identity=", "Softfail; identity="]
+    regex: '%{hdr}(?P<result>Fail|Softfail); identity=(?P<identity>[^;]*); %{conn}'
+    mapping: *spf_mapping
+    static:
+      service.type: "smtp"
+      event.kind: "event"
+      event.category: "email"
+      event.type: "info"
+      event.action: "spf_check"
+      event.outcome: "failure"
+
+  # None / Neutral / Temperror / Permerror: no usable verdict.
+  - name: "spf_other"
+    prematch: "; identity="
+    regex: '%{hdr}(?P<result>[A-Z][a-z]+); identity=(?P<identity>[^;]*); %{conn}'
+    mapping: *spf_mapping
+    static:
+      service.type: "smtp"
+      event.kind: "event"
+      event.category: "email"
+      event.type: "info"
+      event.action: "spf_check"
+      event.outcome: "unknown"
+
+  # Header added to the accepted message:
+  # prepend Received-SPF: <Result> (<scope>) identity=...; client-ip=...
+  - name: "spf_header"
+    prematch: "prepend Received-SPF:"
+    regex: '%{hdr}prepend Received-SPF: (?P<result>\w+) \((?P<scope>[^)]*)\) identity=(?P<identity>[^;]*); %{conn}'
+    mapping: *spf_mapping
+    static:
+      service.type: "smtp"
+      event.kind: "event"
+      event.category: "email"
+      event.type: "info"
+      event.action: "spf_header_added"
+
+  # Check skipped for a whitelisted relay:
+  # prepend X-Comment: SPF skipped for PTR whitelisted relay domain - client-ip=...
+  - name: "spf_skipped"
+    prematch: "prepend X-Comment:"
+    regex: '%{hdr}prepend X-Comment: (?P<comment>.+?) - %{conn}'
+    mapping: *spf_mapping
+    static:
+      service.type: "smtp"
+      event.kind: "event"
+      event.category: "email"
+      event.type: "info"
+      event.action: "spf_skipped"
+      spf.result: "skipped"
+
+  # Message refused: 550 5.7.2x Message rejected due to: <reason>. Please see
+  # http://www.openspf.net/Why?s=<scope>;id=<from>;ip=<client>;r=<receiver>
+  - name: "spf_reject"
+    prematch: "Message rejected due to:"
+    regex: '%{hdr}(?P<smtp_code>\d{3}) (?P<smtp_status>\d\.\d\.\d+) Message rejected due to: (?P<reason>.+?)\.? Please see (?P<url>\S+?Why\?s=(?P<scope>\w+);id=(?P<from>[^;]*);ip=(?P<client_ip>[^;]*);r=(?P<receiver>\S*)|\S+)'
+    mapping: *spf_mapping
+    static:
+      service.type: "smtp"
+      event.kind: "event"
+      event.category: "email"
+      event.type: "denied"
+      event.action: "spf_reject"
+      event.outcome: "failure"
+
+  # pyspf debug: spfcheck: pyspf result: "['<Result>', '<explanation>', '<scope>']"
+  # (the explanation is double-quoted when it contains an apostrophe)
+  - name: "spf_debug"
+    prematch: "spfcheck: pyspf result:"
+    regex: '%{hdr}spfcheck: pyspf result: "\[''(?P<result>\w+)'', [''"](?P<explanation>.*)[''"], ''(?P<scope>\w+)''\]"'
+    mapping: *spf_mapping
+    static:
+      service.type: "smtp"
+      event.kind: "event"
+      event.category: "email"
+      event.type: "info"
+      event.action: "spf_debug"
+
+  # LAST: any other policyd-spf message (startup, config, errors).
+  - name: "spf_message"
+    regex: '%{hdr}(?P<reason>.+)$'
+    mapping: *spf_mapping
+    static:
+      service.type: "smtp"
+      event.kind: "event"
+      event.category: "email"
+      event.type: "info"
+      event.action: "spf_message"
