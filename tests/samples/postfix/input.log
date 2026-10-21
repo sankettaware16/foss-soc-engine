@@ -11,3 +11,8 @@
  timeout after DATA from slow.example[198.18.0.9]
  warning: /etc/postfix/main.cf, line 115: overriding earlier entry: smtpd_client_connection_rate_limit=5
 2026-01-22T12:28:00+00:00 smtpnode1 postfix/smtpd[4123]: disconnect from client.example.net[203.0.113.45] ehlo=1 auth=1 mail=1 rcpt=1 data=1 quit=1 commands=6
+2026-01-22T12:28:01+00:00 relay1 postfix/smtpd[5001]: NOQUEUE: reject: RCPT from unknown[198.51.100.77]: 450 4.1.8 <promo@nonexistent.example>: Sender address rejected: Domain not found; from=<promo@nonexistent.example> to=<jdoe@example.com> proto=ESMTP helo=<[198.51.100.77]>
+2026-01-22T12:28:02+00:00 relay2 postfix/smtpd[5002]: NOQUEUE: reject: RCPT from unknown[192.0.2.78]: 554 5.7.1 Service unavailable; Client host [192.0.2.78] blocked using rbl.example.org; Listed by XBL, see https://rbl.example.org/query/192.0.2.78; from=<> to=<jdoe@example.com> proto=ESMTP helo=<spam.example>
+2026-01-22T12:28:03+00:00 relay1 postfix/smtpd[5001]: SSL_accept error from unknown[203.0.113.79]: lost connection
+2026-01-22T12:28:04+00:00 relay2 postfix/smtpd[5002]: warning: hostname dyn-203-0-113-80.example.net does not resolve to address 203.0.113.80: Name or service not known
+2026-01-22T12:28:05+00:00 smtpnode1 postfix/smtpd[4130]: warning: AUTH command rate limit exceeded: 11 from client.example.net[203.0.113.45] for service submission

@@ -39,6 +39,18 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
   `email.from.address` / `email.to.address`, SPF specifics to `spf.*`.
 - Index template regenerated (`elasticsearch/soc-index-template.json`) to
   cover the dnsdist, nginx, radius, sso and policyd-spf fields.
+
+### Fixed
+
+- **postfix: one-line events lost to earlier patterns.** Lines without a
+  queue id stop at the first matching pattern, which caused:
+  `NOQUEUE: reject` lines claimed by the sender pattern (no `smtp_reject`,
+  no client IP/reason/recipient); every `disconnect from` counted as
+  `smtp_connect`; prefixed `warning:` lines swallowed by the host extractor.
+  Rejects now come first and accept `from=<>` bounces, IPv6 clients,
+  non-RCPT stages and RBL reasons containing `;`. New `tls_error`
+  (SSL_accept) and `rate_limit_exceeded` (anvil) events. Every one-line
+  event now carries the relay's `host.name`.
 - **FreeRADIUS parser** (`rules/radius.yaml`): covers the full observed
   event taxonomy of a `radiusd` log — `Login OK` / `Login incorrect` (with
   the parenthesised failure reason, including reasons that themselves contain
