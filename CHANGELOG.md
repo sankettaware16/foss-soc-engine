@@ -7,6 +7,21 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Index template did not apply to the TLSOC stack's indices.** The template
+  matched only `soc-*`, but the stack's Logstash pipeline writes
+  `fosstlsoc-logs-<service>-YYYY.MM.dd`, so those indices fell back to dynamic
+  mapping (for example `source.ip` as `text`, which breaks CIDR searches). It
+  now matches `fosstlsoc-logs-*` as well as `soc-*`.
+- The template generator ignored mappings that fan one value out to several
+  fields (`host: ["host.name", "observer.hostname"]`) and did not declare the
+  envelope keys the engine copies into `observer.*`. It now declares
+  `observer.{org,dept,env,server,source_host,hostname}`; every field the
+  shipped rules emit (226) is typed by the template. **Upgrading:** re-load the
+  template (`PUT _index_template/foss-soc`); it applies to newly created
+  indices, so existing indices keep their current mapping.
+
 ### Changed
 
 - Joined the unified TLSOC ecosystem: standardized README, branding, and

@@ -1,7 +1,7 @@
 # Elasticsearch index template
 
 `soc-index-template.json` pre-defines the mapping for **every field the
-engine can emit** (143 fields: ECS + the intentional custom fields), so the
+engine can emit** (226 fields: ECS + the intentional custom fields), so the
 first document can never decide a field's type wrong. Without it, one string
 `"2"` makes `event.severity` text forever, a `null` poisons a field, and a
 list-vs-scalar clash breaks the index for every later document.
@@ -23,9 +23,19 @@ PUT _index_template/foss-soc
 { ...contents of soc-index-template.json... }
 ```
 
-The template applies to indices matching **`soc-*`** — name your
-Filebeat/agent output index accordingly (e.g. `soc-nginx_access`,
-`soc-postfix`), or edit `index_patterns` before loading.
+The template applies to indices matching **`fosstlsoc-logs-*`** — what the
+[TLSOC stack](https://github.com/sankettaware16/TLSOCDockerDeploy)'s Logstash
+pipeline writes (`fosstlsoc-logs-<service>-YYYY.MM.dd`) — and to **`soc-*`**,
+for pipelines (Filebeat, Vector, ...) that name their indices `soc-<source>`
+(e.g. `soc-nginx_access`). To cover other names, add them to `INDEX_PATTERNS`
+in `generate_template.py` and regenerate.
+
+Check it took effect (the mapping of `source.ip` should be `ip`):
+
+```bash
+curl -u elastic:$ELASTIC_PASSWORD --cacert certs/ca/ca.crt \
+  "https://localhost:9200/fosstlsoc-logs-*/_mapping/field/source.ip"
+```
 
 ## What it guarantees
 

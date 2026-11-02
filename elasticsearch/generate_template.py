@@ -30,6 +30,11 @@ import yaml
 RULES_DIR = os.path.join(ROOT, "rules")
 OUT_PATH = os.path.join(HERE, "soc-index-template.json")
 
+# Indices the template applies to. `fosstlsoc-logs-*` is what the TLSOC stack's
+# Logstash pipeline writes (fosstlsoc-logs-<service>-YYYY.MM.dd); `soc-*` is kept
+# for pipelines (Filebeat, Vector, ...) that name their indices `soc-<source>`.
+INDEX_PATTERNS = ["fosstlsoc-logs-*", "soc-*"]
+
 # Fields the ENGINE adds (core/engine.py + utils/geoip.py), not the rules.
 ENGINE_FIELDS = {
     "@timestamp": "date",
@@ -43,6 +48,13 @@ ENGINE_FIELDS = {
     "event.incomplete": "boolean",
     "event.reason": "keyword",
     "event.outcome": "keyword",
+    # The whole Kafka envelope `meta` object becomes `observer` (core/engine.py);
+    # these are the keys the rsyslog template / onboarding script sets.
+    "observer.org": "keyword",
+    "observer.dept": "keyword",
+    "observer.env": "keyword",
+    "observer.server": "keyword",
+    "observer.source_host": "keyword",
     "observer.source_program": "keyword",
     "source.geo.country_name": "keyword",
     "source.geo.country_iso_code": "keyword",
@@ -116,6 +128,12 @@ def collect_rule_fields():
     fields = {}
 
     def add(target, hint=None):
+        # A mapping value may fan one captured value out to several fields
+        # (host: ["host.name", "observer.hostname"]).
+        if isinstance(target, (list, tuple)):
+            for t in target:
+                add(t, hint)
+            return
         if not isinstance(target, str) or not target:
             return
         name, _, dtype = target.partition("|")
@@ -198,7 +216,7 @@ def main():
         return 1
 
     template = {
-        "index_patterns": ["soc-*"],
+        "index_patterns": INDEX_PATTERNS,
         "priority": 200,
         "template": {
             "settings": {
