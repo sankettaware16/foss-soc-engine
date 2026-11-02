@@ -21,6 +21,12 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
   shipped rules emit (226) is typed by the template. **Upgrading:** re-load the
   template (`PUT _index_template/foss-soc`); it applies to newly created
   indices, so existing indices keep their current mapping.
+- **Strings now also get a `.keyword` sub-field.** The template previously mapped
+  strings as keyword-only, so field references such as `user_agent.original.keyword`
+  (used by the TLSOC reporting framework, dashboards and saved searches) did not
+  exist on indices created under it. Every string field is now a `keyword` with a
+  `.keyword` sub-field, so both spellings work; verified with the reporting
+  framework's `check-fields` (57/57 field mappings OK).
 
 ### Changed
 

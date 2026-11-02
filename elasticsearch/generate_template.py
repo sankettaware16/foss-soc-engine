@@ -30,6 +30,17 @@ import yaml
 RULES_DIR = os.path.join(ROOT, "rules")
 OUT_PATH = os.path.join(HERE, "soc-index-template.json")
 
+# Every string is a `keyword` that ALSO exposes a `.keyword` sub-field, so a
+# field can be addressed both ways - `url.path` or `url.path.keyword`. The TLSOC
+# reports, dashboards and saved searches use the `.keyword` form (Elasticsearch's
+# default multi-field convention); plain `keyword` alone would silently break
+# them. Both forms are aggregatable and filterable.
+KEYWORD_MAPPING = {
+    "type": "keyword",
+    "ignore_above": 1024,
+    "fields": {"keyword": {"type": "keyword", "ignore_above": 1024}},
+}
+
 # Indices the template applies to. `fosstlsoc-logs-*` is what the TLSOC stack's
 # Logstash pipeline writes (fosstlsoc-logs-<service>-YYYY.MM.dd); `soc-*` is kept
 # for pipelines (Filebeat, Vector, ...) that name their indices `soc-<source>`.
@@ -201,7 +212,7 @@ def to_properties(fields):
             node = node.setdefault(part, {}).setdefault("properties", {})
         leaf = {"type": fields[name]}
         if fields[name] == "keyword":
-            leaf["ignore_above"] = 1024
+            leaf.update(KEYWORD_MAPPING)
         node[parts[-1]] = leaf
     return root
 
@@ -227,8 +238,7 @@ def main():
                     {
                         "strings_as_keyword": {
                             "match_mapping_type": "string",
-                            "mapping": {"type": "keyword",
-                                        "ignore_above": 1024},
+                            "mapping": KEYWORD_MAPPING,
                         }
                     }
                 ],

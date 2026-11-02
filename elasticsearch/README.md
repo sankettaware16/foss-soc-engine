@@ -39,6 +39,10 @@ curl -u elastic:$ELASTIC_PASSWORD --cacert certs/ca/ca.crt \
 
 ## What it guarantees
 
+- Every string field is a `keyword` **and** has a `.keyword` sub-field, so both
+  `url.path` and `url.path.keyword` work in queries, aggregations and
+  dashboards. (The TLSOC reports and dashboards use the `.keyword` form; a
+  keyword-only mapping would silently break them.)
 - `@timestamp`, `event.ingested`, `event.created` are real `date` fields.
 - `source.ip` & friends are the `ip` type (searchable with CIDR ranges).
 - `source.geo.location` is a `geo_point` (works on Kibana maps).
