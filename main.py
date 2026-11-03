@@ -9,10 +9,10 @@ import multiprocessing
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
-from kafka import KafkaConsumer
+from kafka import KafkaConsumer, ConsumerRebalanceListener, TopicPartition
 
 from core.schema import LogInput
-from core.registry import RuleRegistry
+from core.registry import RuleRegistry, source_from_topic
 from core.output import OutputWriter, DlqWriter
 from utils import fastjson
 
@@ -246,7 +246,21 @@ def process_message(message, registry, batch, dlq, monitor, logger):
     raw_value = message.value  # raw bytes off Kafka
     try:
         log_input = LogInput(raw_value)
-        if not log_input.valid:
+        # On a tlsoc.logs.<name> topic the topic itself names the source, so
+        # a plain line (no {meta, raw} envelope) or an envelope whose tag is
+        # unknown still reaches the right rule.
+        topic_source = source_from_topic(getattr(message, "topic", None))
+        is_envelope = log_input.valid and (log_input.meta or log_input.raw)
+        if topic_source is not None and not is_envelope:
+            # Plain line (a JSON log such as Suricata EVE counts as plain too)
+            log_input.valid = True
+            log_input.meta = {}
+            if isinstance(raw_value, (bytes, bytearray)):
+                log_input.raw = raw_value.decode("utf-8", "ignore").strip()
+            else:
+                log_input.raw = str(raw_value).strip()
+            log_input.program = topic_source
+        elif not log_input.valid:
             dlq.write(make_dlq(raw_value, "unknown", "invalid_envelope"))
             monitor.record_error()
             return
@@ -255,6 +269,9 @@ def process_message(message, registry, batch, dlq, monitor, logger):
         # rule that handles the line wins. "Handles" = produced an event OR
         # (stateful) buffered the line into an open transaction.
         processors = registry.get_processors(log_input.program)
+        if not processors and topic_source and topic_source != log_input.program:
+            log_input.program = topic_source
+            processors = registry.get_processors(topic_source)
         if not processors:
             dlq.write(make_dlq(raw_value, log_input.program, "no_matching_rule"))
             monitor.record_error()
@@ -314,6 +331,57 @@ def process_message(message, registry, batch, dlq, monitor, logger):
         monitor.record_error()
 
 
+class NewSourceStart(ConsumerRebalanceListener):
+    """Start a never-consumed tlsoc.logs.* partition at its BEGINNING when small.
+
+    With one topic per source, a newly onboarded source creates its topic on
+    its first line; the engine only discovers it on the next metadata refresh
+    (topic_refresh_sec). Under auto_offset_reset: latest those first lines
+    would be skipped. A partition this consumer group has never committed and
+    that holds at most `limit` messages (a new source) is therefore read from
+    the start; bigger never-consumed topics keep auto_offset_reset, so a first
+    start never replays a huge backlog. Other topics (an old shared topic) are
+    never touched. limit 0 disables this."""
+
+    def __init__(self, limit, logger):
+        self.consumer = None
+        self.limit = limit
+        self.logger = logger
+
+    def on_partitions_revoked(self, revoked):
+        pass
+
+    def on_partitions_assigned(self, assigned):
+        if self.consumer is None or self.limit <= 0 or not assigned:
+            return
+        try:
+            fresh = [tp for tp in assigned if source_from_topic(tp.topic)
+                     and self.consumer.committed(tp) is None]
+            if not fresh:
+                return
+            # Size is judged over the WHOLE topic (all its partitions, also
+            # those other workers own), so every worker decides the same way.
+            topics = {tp.topic for tp in fresh}
+            whole = [TopicPartition(t, p) for t in topics
+                     for p in (self.consumer.partitions_for_topic(t) or ())]
+            begin = self.consumer.beginning_offsets(whole)
+            end = self.consumer.end_offsets(whole)
+            size = {t: 0 for t in topics}
+            for tp in whole:
+                size[tp.topic] += end[tp] - begin[tp]
+            for t in sorted(topics):
+                if size[t] > self.limit:
+                    continue
+                for tp in fresh:
+                    if tp.topic == t:
+                        self.consumer.seek(tp, begin[tp])
+                if size[t]:
+                    self.logger.info(f"New source {t}: reading from its first message "
+                                     f"({size[t]} messages)")
+        except Exception as e:  # never block consumption over this
+            self.logger.warning(f"New-source start check skipped: {e}")
+
+
 def run_worker(worker_id, workers, config):
     """One consumer-group member: the original processing loop, parallelized.
 
@@ -353,7 +421,7 @@ def run_worker(worker_id, workers, config):
     try:
         registry = RuleRegistry(
             rules_dir=os.path.join(BASE_DIR, config["paths"]["rules_dir"]),
-            program_map=config.get("program_mapping", {}),
+            program_map=config.get("program_mapping") or {},
             include_original=bool(out_cfg.get("include_original", True)),
             config_path=CONFIG_PATH,  # hot-reload program_mapping edits
         )
@@ -382,8 +450,21 @@ def run_worker(worker_id, workers, config):
             max_partition_fetch_bytes=kafka_cfg.get(
                 "max_partition_fetch_bytes", 1024 * 1024
             ),
+            # How soon a NEW topic matching input_topic (a newly onboarded
+            # source) is picked up. kafka-python's default is 5 minutes.
+            metadata_max_age_ms=int(
+                float(kafka_cfg.get("topic_refresh_sec", 30)) * 1000
+            ),
         )
-        consumer.subscribe(pattern=kafka_cfg["input_topic"])
+        listener = None
+        if kafka_cfg.get("auto_offset_reset", "latest") == "latest":
+            listener = NewSourceStart(
+                int(kafka_cfg.get("new_source_backfill", 100000)), logger)
+            listener.consumer = consumer
+        if listener is not None:
+            consumer.subscribe(pattern=kafka_cfg["input_topic"], listener=listener)
+        else:
+            consumer.subscribe(pattern=kafka_cfg["input_topic"])
         logger.info(
             f"Worker {worker_id} consuming topics matching: {kafka_cfg['input_topic']}"
         )

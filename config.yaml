@@ -8,16 +8,22 @@ kafka:
   # -------------------------------------------------------------------------
   # TOPIC SELECTION
   # -------------------------------------------------------------------------
-  # Option 1: Single Topic (Plain Text)
-  # If you only have one topic, just write its name (like the default below).
-  #
-  # Option 2: Multiple Topics (Regex)
-  # To listen to several topics at once, use a regex instead, e.g.:
-  # input_topic: "linux|firewall|web"
-  input_topic: "soc-logs"
+  # Every log source has its own topic: tlsoc.logs.<source> (tlsoc.logs.auth,
+  # tlsoc.logs.nginx, tlsoc.logs.squid, ...). This regex consumes all of them,
+  # so a newly onboarded source is picked up automatically - nothing to edit.
+  # Keeping an older single topic as well? Add it with |, e.g.:
+  #   input_topic: '^(tlsoc\.logs\..+|logservercc)$'
+  input_topic: '^tlsoc\.logs\..+$'
+  # How often (seconds) the engine looks for new matching topics.
+  topic_refresh_sec: 30
 
   group_id: "soc-parser-group"
   auto_offset_reset: "latest"
+  # A tlsoc.logs.* topic the engine has never read (a newly onboarded source)
+  # is read from its FIRST message when it holds at most this many messages, so
+  # the first lines of a new source are not skipped. Bigger topics and other
+  # topics follow auto_offset_reset. 0 = off.
+  new_source_backfill: 100000
 
 batch:
   # Performance tuning: Write to disk every 1000 logs OR every 5 seconds
@@ -74,41 +80,17 @@ paths:
   # Where your .yaml rule files are located
   rules_dir: "rules/"
 
-program_mapping:
+program_mapping: {}
   # -------------------------------------------------------------------------
-  # MAPPING LOGIC
+  # OPTIONAL - normally leave this empty.
   # -------------------------------------------------------------------------
-  # Syntax: "source_program_name": "rule_file_name"
-  # The 'source_program' is the program name found in your raw logs (e.g. from rsyslog).
-  # The 'rule_file_name' is the name of the YAML file in rules/ (without .yaml).
-
-  # CASE 1: Linux Authentication (SSH, Sudo, Su)
-  # Map multiple server types to the single 'linux_auth.yaml' rule
-  nginx: "nginx_access"
-  postfix: "postfix"
-  squid: "squid_proxy_access"
-  dns: "dnsdist"
-  radiusd: "radius"
-  sso: "sso"
-  policyd-spf: "policyd_spf"
-
-  # CHAINS: a source may also map to a LIST of rules - the engine tries them
-  # in order and the first rule that handles a line wins. Use this when one
-  # server tag emits several log shapes (web access + app errors + auth):
+  # Each rule declares the source name it parses (`source:` and `aliases:` at
+  # the top of rules/*.yaml), so tags such as auth, nginx, squid, dns, postfix,
+  # radius, sso find their rule automatically. Add an entry here only for a
+  # site-specific tag, or to force a rule chain (first rule that parses wins):
+  #   fmlr: "policyd_spf"
   #   webserver01: ["nginx_access", "linux_auth"]
-#  web_server_auth: "linux_auth"
-  
-  # CASE 2: Web Servers (Nginx & Apache)
-  # Nginx access logs are identical to Apache, so we reuse 'apache.yaml'
- # nginx_access_log: "apache_access"
- # apache_access_log: "apache_access"
-  
-  # CASE 3: WAF & Security
-#  modsecurity_log: "modsec"
-  
-  # CASE 4: Mail Services
-#  postfix: "postfix"
-#  roundcube: "roundcube"
+  # An entry here always wins over the rules' own source names.
 
 # auth:
 #   # Web UI login. Uncomment to sign in with the SAME elastic user/password
