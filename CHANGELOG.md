@@ -7,6 +7,45 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Sources connect by name — one topic per source.** Every log source has one
+  name used end to end: rsyslog tag (`meta.source_program`), Kafka topic
+  `tlsoc.logs.<source>`, the rule that declares `source: <source>`, output file
+  `<source>.json` and index `fosstlsoc-logs-<source>-*`. Rules now declare
+  `source:`, optional `aliases:` (other tags for the same source) and
+  `fallback:` (rules tried next, e.g. nginx → `apache_access` for plain access
+  lines); all 15 shipped rules declare theirs (`auth`, `nginx`, `apache`,
+  `squid`, `dns`, `postfix`, `radius`, `sso`, `policyd_spf`, `suricata`,
+  `modsec`, `fim`, `nessus`, `openvas`, `roundcube`). The default
+  `kafka.input_topic` is `^tlsoc\.logs\..+$` and `program_mapping` ships empty:
+  onboarding a server or adding a rule needs no config edit.
+- Topic routing: on a `tlsoc.logs.<source>` topic a plain line (no `{meta, raw}`
+  envelope, including JSON logs) or an envelope whose tag no rule knows is parsed
+  as that source, so any shipper can send straight to the topic.
+- `kafka.topic_refresh_sec` (default 30): a new source's topic is picked up
+  within this time (the client default was 5 minutes).
+- `kafka.new_source_backfill` (default 100000): a `tlsoc.logs.*` topic this
+  consumer group has never read is read from its first message when it holds at most this many
+  messages, so the first lines of a newly onboarded source are not skipped under
+  `auto_offset_reset: latest`; bigger never-read topics are not replayed.
+- `sources.py`: one row per source — topic, partitions, arrival rate, lag,
+  parser chain, last output, dead letters and a status (OK, WAITING, NO PARSER,
+  BEHIND, DLQ, IDLE).
+- `test_sources.py` (in CI) and a `test_config.py` / `preflight.py` / Web UI
+  check that source names are valid and owned by one rule.
+
+### Changed
+
+- `replicate.py` understands per-source topics (`dynaTopic`) and inputs bound to
+  a ruleset, resolves tags through the rules' source names, and reports a
+  source without a parser as a warning (its lines are kept in the DLQ) instead
+  of failing the run.
+- The Web UI tester accepts source names (`auth`, `mail`, ...).
+- **Upgrading:** nothing changes for an existing `config.yaml`: a shared topic
+  plus `program_mapping` routes exactly as before (verified: identical events on
+  the same input). To move to per-source topics see docs/upgrading.md §8.
+
 ### Fixed
 
 - **Index template did not apply to the TLSOC stack's indices.** The template

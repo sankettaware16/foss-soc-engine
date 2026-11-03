@@ -83,28 +83,29 @@ chmod +x install.sh
 ## Step 3 — Configure the engine
 
 Edit `config.yaml` to match your environment. The shipped file is already a
-working template — you mainly change the Kafka connection and `program_mapping`:
+working template — usually you only change the Kafka address:
 
 ```yaml
 kafka:
   bootstrap_servers: ["localhost:9092"]
-  input_topic: "soc-logs"          # a single topic, OR a regex like "linux|firewall|web"
+  input_topic: '^tlsoc\.logs\..+$'  # every per-source topic: tlsoc.logs.auth, tlsoc.logs.nginx, ...
   group_id: "soc-parser-group"
-  auto_offset_reset: "latest"      # fresh group_id starts at newest (skips backlog)
+  auto_offset_reset: "latest"       # fresh group_id starts at newest (skips backlog)
 
 paths:
   output_dir: "/var/log/soc_output/"
   rules_dir: "rules/"
 
-program_mapping:
-  ssh_server: "linux_auth"
-  ftp_server: "linux_auth"
-  modsec_audit: "modsec"
+program_mapping: {}                 # optional; normally empty
 ```
 
-`program_mapping` lets multiple source programs reuse a single rule (or a list of
-rules — see [chains](writing-rules.md)). The full reference for every block is in
-[configuration.md](configuration.md).
+There is no topic or mapping to set per source. Each log source has one name
+(`auth`, `nginx`, `postfix`, `squid`, ...): servers onboarded with
+[tlsoc-onboard.sh](https://github.com/sankettaware16/TLSOCDockerDeploy/blob/main/docs/onboarding.md)
+send it to topic `tlsoc.logs.<name>`, the rule that declares `source: <name>`
+parses it, and it lands in index `fosstlsoc-logs-<name>-*`. `program_mapping`
+is only for site-specific tags (see [configuration.md](configuration.md#source-names-routing)).
+The full reference for every block is in [configuration.md](configuration.md).
 
 ## Step 4 — Install Redis *(only for `stateful` rules, e.g. postfix)*
 

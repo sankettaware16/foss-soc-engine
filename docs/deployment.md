@@ -26,23 +26,30 @@ Or override per-deployment without editing config:
 SOC_WORKERS=8 sudo systemctl restart foss-soc
 ```
 
-**One rule to remember:** create at least as many **partitions** per Kafka topic
-as you have total workers. A partition is only ever read by one worker, so extra
-workers beyond the partition count sit idle.
+**One rule to remember:** a partition is only ever read by one worker, so the
+partitions of all topics together cap how many workers can be busy. TLSOC uses
+one topic per source (`tlsoc.logs.<source>`); TLSOCDockerDeploy creates the
+standard ones with a partition count per source (`kafka/topics.conf`: 6 for
+busy sources such as squid and dns, 3 by default, 1 for postfix) and new sources
+get `KAFKA_DEFAULT_PARTITIONS` (3). Raise a busy source later with:
 
 ```bash
-# Example: 12 partitions so up to 12 workers (or machines) share the load
-kafka-topics.sh --alter --topic web-logs --partitions 12 --bootstrap-server localhost:9092
+kafka-topics.sh --alter --topic tlsoc.logs.squid --partitions 12 --bootstrap-server localhost:9092
 ```
 
-**The per-source ceiling:** the reference rsyslog configuration keys Kafka
-messages by `%programname%`, so **all lines from one source land in one
-partition** — which is exactly what stateful (transaction) correlation requires,
-but it also means one source is processed by at most **one worker**. Many sources
-spread across workers beautifully; a single monster source does not. If you need
-to shard one enormous *stateless* source, key by something finer (e.g.
-hostname+program) — but never split a *stateful* source across partitions, or
-transaction lines will land on different workers and correlation breaks.
+Measured on one laptop with the production source mix (squid 56 %, dns 37 %,
+sso 5 %, rest 2 %): one shared single-partition topic and per-source topics both
+drain ~15k events/s with 1 worker; per-source topics with 4 workers drain
+~37k events/s. During a 400k-line squid burst, sso events waited up to 24 s
+behind squid on the shared topic and ≤ 1.4 s on their own topic.
+
+**Spreading one source over partitions:** `tlsoc-onboard.sh` sets
+`partitions.auto="on"` on the omkafka action, so lines of one source spread over
+all partitions of its topic and several workers share a busy source. (Without
+it, omkafka writes every message to partition 0.) **Stateful** rules (postfix:
+multi-line transactions correlated in Redis) need the lines of one transaction
+in order, so give their topic **one** partition — `kafka/topics.conf` does this
+for postfix.
 
 ## The Kafka envelope contract (bring your own producer)
 
@@ -50,12 +57,13 @@ The engine consumes JSON messages of this shape — rsyslog, Filebeat, Vector, o
 your own script can all produce it:
 
 ```json
-{"meta": {"source_program": "nginx_access"}, "raw": "the original log line"}
+{"meta": {"source_program": "nginx"}, "raw": "the original log line"}
 ```
 
-- **`meta.source_program`** (required): the routing key — matched against
-  `program_mapping` in `config.yaml` (falling back to a rule with exactly that
-  name) to pick the parser.
+- **`meta.source_program`** (required): the source name — the rule that
+  declares it (`source:` / `aliases:`) parses it; `program_mapping` in
+  `config.yaml` can override. On a `tlsoc.logs.<source>` topic the envelope is
+  optional: a plain line is parsed as that source.
 - **`raw`** (required): the log line itself, as a JSON string.
 - Anything else under `meta` (host, org, env, …) is carried along untouched.
 
@@ -66,15 +74,14 @@ Example Vector sink producing the envelope:
 type = "remap"
 inputs = ["my_source"]
 source = '''
-. = {"meta": {"source_program": "nginx_access"}, "raw": .message}
+. = {"meta": {"source_program": "nginx"}, "raw": .message}
 '''
 
 [sinks.kafka]
 type = "kafka"
 inputs = ["envelope"]
 bootstrap_servers = "localhost:9092"
-topic = "soc-logs"
-key_field = "meta.source_program"   # keeps one source on one partition
+topic = "tlsoc.logs.nginx"           # one topic per source
 encoding.codec = "json"
 ```
 

@@ -43,9 +43,12 @@ the source to it in configuration.
 
 ## Key Features
 
-- **Polymorphic routing** — log sources are decoupled from parsing logic via
-  configuration-based program mapping; one messy source can be routed through a
-  *chain* of rules, first match wins.
+- **Sources connect by name** — each log source has one name used end to end:
+  rsyslog tag, Kafka topic `tlsoc.logs.<source>`, the rule that declares
+  `source: <source>`, and index `fosstlsoc-logs-<source>-*`. New sources and new
+  rules are picked up while running; no topic or mapping to configure. One messy
+  source can still be routed through a *chain* of rules, first match wins, and
+  `program_mapping` remains for site-specific tags.
 - **Five parsing strategies** — `stateless` (single regex), `multi_match` (pattern
   list), `stateful` (Redis-backed multi-line transaction reassembly, e.g. Postfix),
   `json_map` (dot-path JSON mapping with wildcards), and `xml_xpath` (XML element
@@ -124,7 +127,8 @@ chmod +x install.sh
 ./install.sh
 ```
 
-Then edit `config.yaml` (Kafka connection and `program_mapping`), and validate
+Then set the Kafka address in `config.yaml` (sources connect by name: topic
+`tlsoc.logs.<source>` → the rule with `source: <source>`), and validate
 everything before going live:
 
 ```bash
@@ -164,6 +168,7 @@ config, and watching the engine run — you are never locked into one:
 Common tasks:
 
 ```bash
+python3 sources.py                            # one row per source: flowing? parsed? behind?
 python3 preflight.py                          # validate config + live infrastructure
 python3 replicate.py --rsyslog <conf>         # dry-run the full pipeline, no Kafka
 python3 test_rules.py                         # interactive rule tester
@@ -221,6 +226,7 @@ clock or timezone label is wrong — fix the source, not the engine.
 ├── benchmark.py          # Capacity (EPS/latency) + live pipeline-lag benchmark
 ├── preflight.py          # Pre-run validator (config + live infrastructure)
 ├── replicate.py          # Local dry-run of the rsyslog→Kafka→engine pipeline
+├── sources.py            # Per-source status: topic, rate, lag, parser, dead letters
 ├── test_*.py             # Regression battery (config, timestamps, enrichment, golden)
 └── docs/                 # Documentation (see below)
 ```

@@ -22,7 +22,8 @@ It checks, in order:
 2. paths (rules dir, output dir) and the GeoIP database
 3. rules load and every regex compiles
 4. every rule field is valid ECS
-5. `program_mapping` points at rules that exist
+5. `program_mapping` points at rules that exist, and every rule's `source:` /
+   `aliases:` name is valid and claimed by one rule only
 6. the Kafka `host:port` is actually reachable **from this server** (raw TCP)
 7. the broker really speaks Kafka, and your configured topics **exist** (with
    partition counts)
@@ -92,6 +93,31 @@ like an rsyslog→engine **topic mismatch** — makes `replicate.py` exit **1**;
 clean run exits **0**:
 `python3 replicate.py --rsyslog ... && systemctl start foss-soc`.
 
+## Source status — `sources.py`
+
+One row per log source — the first thing to run when "logs are not showing up":
+
+```bash
+python3 sources.py              # table (samples the arrival rate over 5 s)
+python3 sources.py --json       # for scripts / monitoring
+python3 sources.py --no-kafka   # rules and files only
+```
+
+```
+SOURCE   STATUS    TOPIC              PART  RATE/s   LAG  PARSER                        OUTPUT  DLQ
+auth     OK        tlsoc.logs.auth       3      12     0  linux_auth                       2s    -
+moodle   NO PARSER tlsoc.logs.moodle     3       4     0  NO PARSER                         -   6.4K
+nginx    OK        tlsoc.logs.nginx      3     310     0  nginx_access > apache_access     1s    -
+squid    WAITING   tlsoc.logs.squid      6       -     -  squid_proxy_access                -    -
+```
+
+`STATUS`: **OK**; **WAITING** (no data yet); **NO PARSER** (data arrives, no rule
+declares this source — its lines are kept in `logs/dlq/<source>.json`; write a
+rule with `source: <source>`); **BEHIND** (more than 100k messages waiting —
+add workers/partitions); **DLQ** (recent dead letters — a rule does not match
+every line); **IDLE** (had data, nothing arriving now). Exit code 1 when a
+source is NO PARSER or BEHIND.
+
 ## Interactive rule tester
 
 Test regex patterns and JSON mappings without Kafka ingestion:
@@ -140,6 +166,7 @@ every push and pull request, on Python 3.10 and 3.12:
 | `test_timestamps.py` | every rule's `timestamp:` block parses its format, normalizes to UTC, and unparseable times fall back **visibly** (`ingest_fallback`) — 49 cases |
 | `test_enrichment.py` | GeoIP + ASN enrichment plumbing, real-database lookups (auto-skip if the mmdb files are absent), and that `geoip.enabled: false` really disables both |
 | `test_golden.py` | every rule's **golden-sample exam** (`tests/samples/<rule>/input.log` vs `expected.ndjson`): any rule edit that changes any answer fails with a diff |
+| `test_sources.py` | source names and topic routing: every rule's `source:`/`aliases:`/`fallback:`, `program_mapping` still winning, name conflicts, plain lines and unknown tags routed by their `tlsoc.logs.<source>` topic, the old shared-topic behaviour unchanged, and that a newly created small topic is read from its first message while a big never-read topic is not replayed |
 
 This is what makes rule contributions safe to accept: if a change to any rule
 alters any golden-sample answer, the build fails with a diff. Refresh a golden

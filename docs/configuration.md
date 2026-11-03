@@ -9,14 +9,28 @@ covers the minimal first-run setup.
 ```yaml
 kafka:
   bootstrap_servers: ["localhost:9092"]
-  input_topic: "soc-logs"          # a single topic, OR a regex like "linux|firewall|web"
+  input_topic: '^tlsoc\.logs\..+$'  # every per-source topic tlsoc.logs.<source>
+  topic_refresh_sec: 30             # how soon a NEW matching topic is picked up
   group_id: "soc-parser-group"
   auto_offset_reset: "latest"
+  new_source_backfill: 100000       # see "New sources" below; 0 = off
   # performance (optional):
   max_poll_records: 2000
   fetch_max_bytes: 52428800
   max_partition_fetch_bytes: 1048576
 ```
+
+**One topic per source.** TLSOC sends each log source to its own topic,
+`tlsoc.logs.<source>` (`tlsoc.logs.auth`, `tlsoc.logs.nginx`, ...), and the
+default `input_topic` regex consumes all of them. A newly onboarded source is
+picked up within `topic_refresh_sec` without editing anything. The topic name
+also routes: a plain log line with no `{meta, raw}` envelope on
+`tlsoc.logs.squid` is parsed as `squid`, and so is an envelope whose
+`source_program` no rule knows. See [Source names](#source-names-routing).
+
+Still using one shared topic for everything? Keep it by adding it to the regex,
+e.g. `'^(tlsoc\.logs\..+|logservercc)$'`, or set `input_topic` to that topic
+alone; routing then uses `meta.source_program` exactly as before.
 
 **Offset semantics** (`auto_offset_reset`, default `latest`): a **fresh**
 `group_id` starts at the newest message and skips any backlog — ideal for "start
@@ -24,6 +38,15 @@ clean, real-time". A group that has committed offsets **resumes where it left
 off** and processes the gap. To force real-time again after downtime, switch to a
 NEW `group_id`. Offsets are only ever committed after events are flushed to disk,
 so restarts re-process rather than lose.
+
+**New sources** (`new_source_backfill`, default 100000): a new source's topic is
+created by its first line, and the engine discovers it a few seconds later.
+Under `latest` those first lines would be skipped, so a `tlsoc.logs.*` topic
+this consumer group has never read is read from its **first** message when it
+holds at most this many messages (counted over the whole topic). A bigger
+never-read topic still follows `auto_offset_reset` and is not replayed, and
+other topics (an old shared topic) are never affected. Only applies with
+`auto_offset_reset: latest`.
 
 Optional: `pip install confluent-kafka` switches to the C Kafka client for the
 highest throughput; the pure-Python client is used otherwise.
@@ -36,19 +59,44 @@ paths:
   rules_dir: "rules/"
 ```
 
-## Program mapping (routing)
+## Source names (routing)
+
+Every rule declares the source name it parses, at the top of its file:
+
+```yaml
+pattern_name: "linux_auth"
+source: "auth"                       # topic tlsoc.logs.auth, index fosstlsoc-logs-auth-*
+aliases: ["sshd", "sudo", "su", "secure"]
+```
+
+`meta.source_program` from the Kafka envelope (the rsyslog tag) picks the parser
+in this order:
+
+1. `program_mapping` in `config.yaml`, used exactly as written (site overrides)
+2. a rule whose `pattern_name` is the source program
+3. a rule that declares it as `source:` or in `aliases:`
+4. the topic name, when the topic is `tlsoc.logs.<source>`
+
+For 2 and 3 the rule's own `fallback:` rules follow it (nginx tries
+`nginx_access`, then `apache_access` for plain access-log lines). The output file
+and the index are named after the source program: `<source>.json` →
+`fosstlsoc-logs-<source>-YYYY.MM.dd`. A source no rule handles goes to
+`logs/dlq/<source>.json` until a rule for it exists.
+
+`python3 sources.py` shows, per source, its topic, rate, lag, parser, last output
+and dead letters.
+
+### program_mapping (optional)
 
 ```yaml
 program_mapping:
-  ssh_server: "linux_auth"          # many programs → one reusable rule
-  ftp_server: "linux_auth"
-  modsec_audit: "modsec"
-  webserver01: ["nginx_access", "php_errors"]   # a CHAIN: first rule that handles a line wins
+  fmlr: "policyd_spf"                          # a site-specific tag
+  webserver01: ["nginx_access", "linux_auth"]  # a CHAIN: first rule that handles a line wins
 ```
 
-`meta.source_program` from the Kafka envelope is looked up here (falling back to
-a rule with exactly that name) to pick the parser. Chains let one messy source be
-tried against several rules in order. See [writing-rules.md](writing-rules.md).
+Leave it empty (`{}`) unless a tag of yours is not a rule's source name or
+alias, or you want to force a chain. An entry here always wins. Edits are
+hot-reloaded. See [writing-rules.md](writing-rules.md).
 
 ## Runtime (workers)
 

@@ -13,7 +13,8 @@ Python to add a parser — you just add a YAML file.
 ## 1. Quick start (5 steps)
 
 1. Create a file in `rules/`, e.g. `rules/myapp.yaml`.
-2. Give it a unique `pattern_name` and pick a `strategy` (see §3).
+2. Give it a unique `pattern_name`, its **source name** (`source: "myapp"` — the
+   name the logs arrive under, see §8) and pick a `strategy` (see §3).
 3. Write the `mapping` — turn each captured value into an **ECS field**.
 4. **Check it** with the helper (this is the important part):
    ```bash
@@ -21,8 +22,9 @@ Python to add a parser — you just add a YAML file.
    ```
    Fix anything marked `x` (it shows you the correct ECS field). Custom fields
    marked `~` are fine.
-5. Point your log source at the rule in `config.yaml` → `program_mapping`, then
-   restart: `sudo systemctl restart foss-soc`.
+5. Save it. The running engine loads it within ~10 seconds (no restart), and
+   every line arriving as source `myapp` (topic `tlsoc.logs.myapp`) is parsed
+   from then on, landing in index `fosstlsoc-logs-myapp-*`.
 
 That's it. The same `ecs_helper.py` is also run automatically by the deploy
 validator (`python3 test_config.py`), so a rule with bad field names cannot ship.
@@ -363,16 +365,46 @@ rules work in the exam via a built-in in-memory Redis stand-in.)
 
 ## 8. Hook your log source to the rule
 
-In `config.yaml`, map the **source program name** (what your shipper sets) to the
-rule's `pattern_name`:
+Each log source has ONE name used end to end: the rsyslog tag (or Siphon's
+`source_program`), the Kafka topic `tlsoc.logs.<name>`, the output file
+`<name>.json` and the index `fosstlsoc-logs-<name>-*`. A rule says which name it
+parses at the top of its file:
+
 ```yaml
-program_mapping:
-  myapp_prod: "myapp_access"
-  myapp_stage: "myapp_access"   # many sources can reuse one rule
+pattern_name: "myapp_access"
+source: "myapp"                     # topic tlsoc.logs.myapp, index fosstlsoc-logs-myapp-*
+aliases: ["myapp_prod", "myapp2"]   # other tags that mean the same source (optional)
+fallback: ["apache_access"]         # rules to try when this one does not match (optional)
 ```
 
-**One messy source, several rules? Use a CHAIN.** If one server tag emits
-several log shapes (web access + app errors + auth), map it to a *list* — the
+- `source` — lowercase letters, digits, `_` or `-`. One rule per name;
+  `test_config.py` rejects two rules claiming the same name.
+- `aliases` — extra tags routed to this rule, e.g. hosts that log under an older
+  program name.
+- `fallback` — a chain: when this rule produces nothing for a line, these rules
+  are tried in order (nginx falls back to `apache_access` for plain access
+  lines).
+
+Nothing else to configure. Onboard the server with `tlsoc-onboard.sh` and give the
+log file the same name (`/var/log/myapp.log` → source `myapp`), or point any
+shipper at topic `tlsoc.logs.myapp` — plain lines without the `{meta, raw}`
+envelope are fine there, the topic names the source.
+
+Lines that arrived **before** the rule existed are in `logs/dlq/myapp.json` —
+they are your samples (see the end of §10).
+
+**Site-specific tags: `program_mapping`.** When a tag is only meaningful at your
+site, map it in `config.yaml` instead of adding an alias to a shared rule. An
+entry there always wins over the rules' own names:
+```yaml
+program_mapping:
+  fmlr: "policyd_spf"
+  myapp_stage: "myapp_access"
+```
+
+**One messy source, several rules? Use a CHAIN.** Besides `fallback:`, a server
+tag that emits several log shapes (web access + app errors + auth) can be mapped
+to a *list* in `program_mapping` — the
 engine tries the rules in order and the first one that handles a line wins
 (handling = produced an event, or buffered it into a stateful transaction):
 
@@ -553,8 +585,8 @@ under a namespace named after the product (e.g. myapp.session_token). Never inve
 new sub-fields inside ECS field sets like event.* or source.*.
 
 # AFTER THE YAML
-On the final commented line of the YAML, suggest the config.yaml program_mapping
-entry, e.g.:  # program_mapping:  myapp_prod: "<pattern_name>"
+Start the YAML with pattern_name, then source: "<short lowercase source name>"
+(the name the logs arrive under), then strategy.
 
 Here are my RAW LOG SAMPLES:
 <<< PASTE 5–20 RAW LOG LINES HERE >>>
@@ -562,8 +594,8 @@ Here are my RAW LOG SAMPLES:
 
 That's the whole workflow: paste prompt + logs → get YAML → save it in `rules/`
 (or paste it into the Web UI's **Rules** editor) → `python3 ecs_helper.py check`
-→ add the `program_mapping` line → the running engine hot-reloads the rule
-within ~10 seconds, no restart needed. Done.
+→ the running engine hot-reloads the rule within ~10 seconds, no restart
+needed, and the source is parsed from then on. Done.
 
 Where to get the raw samples: the engine's dead-letter queue is your to-do
 list — `logs/dlq/<source>.json` holds exactly the lines no pattern matched,

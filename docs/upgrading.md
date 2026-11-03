@@ -68,7 +68,7 @@ Start from the shipped `config.yaml` and port your old values:
 | `kafka.group_id` | **use a NEW id for the shadow test** (e.g. `<old>-shadow`) | joining the old group would steal partitions from the running engine. You switch back at cutover. |
 | — | `runtime.workers: 1` | **start with 1**: output filenames stay identical to the old engine (`postfix.json`, …). With N>1 they become `<module>.wN.json` and your Filebeat/shipper glob must change. Scale up later. |
 | `paths.output_dir` | **a test dir for the shadow phase** (e.g. `/var/log/soc_output_test/`) | switched to the real dir at cutover |
-| `program_mapping` | port every entry | **verify each rule name really exists** — `test_config.py` catches dangling names. (The reference migration found a mapping to a rule that never existed; that source had been silently dropped for months.) |
+| `program_mapping` | port the site-specific entries | entries whose tag is now a rule's own `source:`/alias (e.g. `nginx`, `squid`, `dns`, `postfix`, `radiusd`) may be dropped, but keeping them is harmless and keeps the old behaviour exactly. **Verify each rule name really exists** — `test_config.py` catches dangling names. (The reference migration found a mapping to a rule that never existed; that source had been silently dropped for months.) |
 | — | `output:` block | `dlq_rotate_mb: 200` default is good; `include_original: false` halves ES storage if you don't need raw lines |
 | — | `redis:` block | only needed by stateful rules; defaults to localhost:6379 |
 | — | `auth.env_file` | Web UI login via your ELK `.env` (see README "Signing in") |
@@ -110,7 +110,8 @@ ls -ltrh logs/dlq/                    # dead-letters, one file per source
 
 **Triage every DLQ file** — each entry carries the raw line that failed:
 
-- `no_matching_rule` → the source isn't in `program_mapping`. Add it.
+- `no_matching_rule` → no rule handles this source name. Add it to `program_mapping`
+  (site tag), or write a rule with `source: <name>` (new source).
 - `no_match` → a log shape the rule doesn't cover. Fix/extend the rule (the
   engine hot-reloads rule edits within ~10s — no restart) or accept the noise.
 - A giant JSON line cut off mid-field → rsyslog truncation; raise
@@ -185,11 +186,32 @@ start.
   parse time. Old versions only had ingest time.
 - **Load the ES index template** (`elasticsearch/README.md`) so every field is
   typed correctly from the first document.
-- Scale `runtime.workers` up (remember the shipper glob: `<module>*.json`).
+- Scale `runtime.workers` up (remember the shipper glob: `<module>*.json`;
+  TLSOCDockerDeploy's Logstash pipeline already maps `squid.w0.json` to index
+  `fosstlsoc-logs-squid-*`).
 - Clean up: the shadow test output dir, and — once you trust the new engine —
   `/etc/foss-soc-engine.old` (the tar in `/opt/backups` remains).
 - The shadow consumer group left committed offsets in Kafka; it is harmless,
   or delete it with `kafka-consumer-groups --delete --group <shadow-id>`.
+
+## 8. Optional: move to one topic per source
+
+Older deployments send every source to one shared topic and route by
+`program_mapping`. That keeps working unchanged (a side-by-side test produced
+identical events). Moving to per-source topics (`tlsoc.logs.<source>`) gives
+per-source lag, parallel workers for busy sources, and isolation (a burst of
+one source no longer delays the others). To move without a gap:
+
+1. Create the topics (TLSOCDockerDeploy: `sudo ./kafka/setup-topics.sh`).
+2. Consume both: `input_topic: '^(tlsoc\.logs\..+|<old-topic>)$'` (restart the engine;
+   keep the same `group_id`, so the old topic resumes where it was).
+3. Re-run `tlsoc-onboard.sh` on each server (or switch the omkafka action to
+   `topic="TlsocTopic" dynaTopic="on" partitions.auto="on"` with
+   `template(name="TlsocTopic" type="string" string="tlsoc.logs.%programname%")`).
+   Tags already match the rules' source names; keep `program_mapping` for the
+   site-specific ones.
+4. When `python3 sources.py` shows the old topic with lag 0 and nothing
+   arriving, remove it from `input_topic`.
 
 ## What you gain (why this upgrade matters)
 

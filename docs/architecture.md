@@ -70,11 +70,17 @@ sequenceDiagram
 
 ## Routing (polymorphic parsing)
 
-`meta.source_program` is looked up in `program_mapping`; multiple source programs
-can map to one reusable rule, and one source can map to a **chain** of rules
-tried in order. A rule whose `pattern_name` equals the source program is the
-fallback. This decouples log sources from parsing logic — onboarding a source is
-a configuration change.
+Every log source has one name used end to end: rsyslog tag
+(`meta.source_program`), Kafka topic `tlsoc.logs.<name>`, output file
+`<name>.json`, index `fosstlsoc-logs-<name>-*`. The parser is picked in this
+order: `program_mapping` (site overrides, exact) → a rule whose `pattern_name`
+is the name → a rule that declares it as `source:` or in `aliases:` → the topic
+name (`tlsoc.logs.<name>`, also for plain lines without an envelope). A rule's
+`fallback:` list follows it as a **chain** tried in order. Onboarding a source
+is therefore not a configuration change at all: the engine subscribes to
+`tlsoc.logs.*`, discovers new topics within `topic_refresh_sec`, and hot-reloads
+new rules. Sources without a rule go to `logs/dlq/<name>.json` until one exists;
+`sources.py` lists every source with its topic, lag and parser.
 
 ## Parsing strategies
 
