@@ -115,7 +115,9 @@ squid    WAITING   tlsoc.logs.squid      6       -     -  squid_proxy_access    
 declares this source — its lines are kept in `logs/dlq/<source>.json`; write a
 rule with `source: <source>`); **BEHIND** (more than 100k messages waiting —
 add workers/partitions); **DLQ** (recent dead letters — a rule does not match
-every line); **IDLE** (had data, nothing arriving now). Exit code 1 when a
+every line); **IDLE** (had data, nothing arriving now); **SHARED** (an older
+shared topic such as `logservercc`, routed by each line's `source_program`).
+Exit code 1 when a
 source is NO PARSER or BEHIND.
 
 ## Interactive rule tester

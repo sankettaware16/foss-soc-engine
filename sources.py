@@ -13,7 +13,8 @@ source name a rule declares, it shows:
   dlq          size of this source's dead-letter file (logs/dlq/<source>*)
 
 and a STATUS: OK, WAITING (no data yet), NO PARSER, BEHIND,
-DLQ (recent dead letters), IDLE (had data, nothing arriving now).
+DLQ (recent dead letters), IDLE (had data, nothing arriving now), SHARED (an
+older shared topic whose lines route by their own source_program).
 
     python3 sources.py                 # table
     python3 sources.py --sample 10     # steadier rate numbers
@@ -141,8 +142,11 @@ def main():
 
     rows = {}
     for topic, info in topics.items():
-        name = source_from_topic(topic) or topic
-        rows[name] = {"source": name, "topic": topic, **info}
+        name = source_from_topic(topic)
+        if name is None:  # an older shared topic: its lines route by their own tag
+            rows[topic] = {"source": topic, "topic": topic, "shared": True, **info}
+        else:
+            rows[name] = {"source": name, "topic": topic, **info}
     for eng in registry.engines.values():
         src = (getattr(eng, "config", None) or {}).get("source")
         if src and src not in rows:
@@ -151,15 +155,19 @@ def main():
 
     worst = 0
     for name, r in sorted(rows.items()):
-        procs = registry.get_processors(name)
-        r["parser"] = " > ".join(n for n, _ in procs) if procs else None
+        procs = [] if r.get("shared") else registry.get_processors(name)
+        r["parser"] = "(by source_program)" if r.get("shared") else (
+            " > ".join(n for n, _ in procs) if procs else None)
         out_age, out_size = newest(glob.glob(os.path.join(output_dir, f"{name}.json*")) +
                                    glob.glob(os.path.join(output_dir, f"{name}.w*.json*")))
         dlq_age, dlq_size = newest(glob.glob(os.path.join(dlq_dir, f"{name}.json*")) +
                                    glob.glob(os.path.join(dlq_dir, f"{name}.w*.json*")))
         r.update(output_age=out_age, output_bytes=out_size, dlq_age=dlq_age, dlq_bytes=dlq_size)
         has_data = bool(r["end"]) or out_age is not None
-        if not has_data:
+        if r.get("shared"):
+            status = "BEHIND" if (r["lag"] or 0) > BEHIND_LAG else (
+                "IDLE" if r["rate"] == 0 else "SHARED")
+        elif not has_data:
             status = "WAITING"
         elif not r["parser"]:
             status = "NO PARSER"
