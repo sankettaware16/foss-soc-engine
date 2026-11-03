@@ -34,3 +34,6 @@ jobs:
 
       - name: Golden samples — one exam per rule
         run: python test_golden.py
+
+      - name: Source names and topic routing
+        run: python test_sources.py

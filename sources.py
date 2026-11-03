@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""
+sources.py — one table, one row per log source: is it flowing and parsed?
+
+For every Kafka topic the engine consumes (kafka.input_topic) plus every
+source name a rule declares, it shows:
+
+  topic        tlsoc.logs.<source> (or your legacy topic), partitions
+  rate         messages/sec arriving right now (two samples, --sample secs)
+  lag          messages waiting for the engine (consumer group kafka.group_id)
+  parser       the rule chain this source resolves to (or NO PARSER)
+  output       age of the last parsed event written (<source>.json)
+  dlq          size of this source's dead-letter file (logs/dlq/<source>*)
+
+and a STATUS: OK, WAITING (no data yet), NO PARSER, BEHIND,
+DLQ (recent dead letters), IDLE (had data, nothing arriving now).
+
+    python3 sources.py                 # table
+    python3 sources.py --sample 10     # steadier rate numbers
+    python3 sources.py --json          # machine-readable
+    python3 sources.py --no-kafka      # rules / files only
+
+Exit code: 0 when no source is in NO PARSER or BEHIND, else 1.
+"""
+import argparse
+import glob
+import json
+import os
+import re
+import sys
+import time
+
+import yaml
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+from core.registry import RuleRegistry, source_from_topic  # noqa: E402
+
+BEHIND_LAG = 100000      # messages
+RECENT_SEC = 900         # "recent" for output / DLQ activity
+
+
+def human_age(sec):
+    if sec is None:
+        return "-"
+    if sec < 90:
+        return f"{int(sec)}s"
+    if sec < 5400:
+        return f"{int(sec // 60)}m"
+    if sec < 172800:
+        return f"{int(sec // 3600)}h"
+    return f"{int(sec // 86400)}d"
+
+
+def human_size(n):
+    for unit in ("B", "K", "M", "G"):
+        if n < 1024 or unit == "G":
+            return f"{n:.0f}{unit}" if unit == "B" else f"{n:.1f}{unit}"
+        n /= 1024.0
+
+
+def newest(paths):
+    """(age_seconds, total_bytes) over existing files, or (None, 0)."""
+    now = time.time()
+    stats = [os.stat(p) for p in paths if os.path.isfile(p)]
+    if not stats:
+        return None, 0
+    return now - max(s.st_mtime for s in stats), sum(s.st_size for s in stats)
+
+
+def kafka_view(cfg, sample_sec):
+    """{topic: {"partitions": n, "end": sum, "lag": n, "rate": msg/s}}"""
+    from kafka import KafkaConsumer, KafkaAdminClient, TopicPartition
+    k = cfg["kafka"]
+    servers = k["bootstrap_servers"]
+    topic_re = re.compile(k["input_topic"])
+    consumer = KafkaConsumer(bootstrap_servers=servers, request_timeout_ms=15000,
+                             api_version_auto_timeout_ms=10000)
+    try:
+        topics = sorted(t for t in consumer.topics() if topic_re.match(t))
+        parts = {t: [TopicPartition(t, p) for p in sorted(consumer.partitions_for_topic(t) or [])]
+                 for t in topics}
+        all_tp = [tp for tps in parts.values() for tp in tps]
+        end1 = consumer.end_offsets(all_tp) if all_tp else {}
+        t0 = time.time()
+        if sample_sec > 0 and all_tp:
+            time.sleep(sample_sec)
+        end2 = consumer.end_offsets(all_tp) if all_tp else {}
+        dt = max(time.time() - t0, 1e-6)
+    finally:
+        consumer.close()
+    committed = {}
+    if k.get("group_id"):
+        admin = KafkaAdminClient(bootstrap_servers=servers, request_timeout_ms=15000)
+        try:
+            for tp, om in (admin.list_consumer_group_offsets(k["group_id"]) or {}).items():
+                committed[tp] = om.offset
+        finally:
+            admin.close()
+    view = {}
+    for t, tps in parts.items():
+        end = sum(end2.get(tp, 0) for tp in tps)
+        lag = sum(max(0, end2.get(tp, 0) - committed[tp]) for tp in tps if tp in committed)
+        view[t] = {
+            "partitions": len(tps),
+            "end": end,
+            "lag": lag if any(tp in committed for tp in tps) else None,
+            "rate": (end - sum(end1.get(tp, 0) for tp in tps)) / dt if sample_sec > 0 else None,
+        }
+    return view
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--config", default=os.path.join(HERE, "config.yaml"))
+    ap.add_argument("--sample", type=float, default=5.0,
+                    help="seconds between the two offset samples used for the rate (0 = skip)")
+    ap.add_argument("--no-kafka", action="store_true", help="skip Kafka (rules and files only)")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    cfg = yaml.safe_load(open(args.config)) or {}
+    base = os.path.dirname(os.path.abspath(args.config))
+    rules_dir = cfg.get("paths", {}).get("rules_dir", "rules/")
+    rules_dir = rules_dir if os.path.isabs(rules_dir) else os.path.join(base, rules_dir)
+    output_dir = cfg.get("paths", {}).get("output_dir", "/var/log/soc_output/")
+    dlq_dir = os.path.join(base, "logs", "dlq")
+
+    import logging
+    logging.getLogger("soc-engine").setLevel(logging.CRITICAL)
+    registry = RuleRegistry(rules_dir, cfg.get("program_mapping") or {})
+
+    kafka_error = None
+    topics = {}
+    if not args.no_kafka:
+        try:
+            topics = kafka_view(cfg, args.sample)
+        except Exception as e:  # unreachable broker must not hide the rest
+            kafka_error = str(e) or e.__class__.__name__
+
+    rows = {}
+    for topic, info in topics.items():
+        name = source_from_topic(topic) or topic
+        rows[name] = {"source": name, "topic": topic, **info}
+    for eng in registry.engines.values():
+        src = (getattr(eng, "config", None) or {}).get("source")
+        if src and src not in rows:
+            rows[src] = {"source": src, "topic": None, "partitions": None,
+                         "end": None, "lag": None, "rate": None}
+
+    worst = 0
+    for name, r in sorted(rows.items()):
+        procs = registry.get_processors(name)
+        r["parser"] = " > ".join(n for n, _ in procs) if procs else None
+        out_age, out_size = newest(glob.glob(os.path.join(output_dir, f"{name}.json*")) +
+                                   glob.glob(os.path.join(output_dir, f"{name}.w*.json*")))
+        dlq_age, dlq_size = newest(glob.glob(os.path.join(dlq_dir, f"{name}.json*")) +
+                                   glob.glob(os.path.join(dlq_dir, f"{name}.w*.json*")))
+        r.update(output_age=out_age, output_bytes=out_size, dlq_age=dlq_age, dlq_bytes=dlq_size)
+        has_data = bool(r["end"]) or out_age is not None
+        if not has_data:
+            status = "WAITING"
+        elif not r["parser"]:
+            status = "NO PARSER"
+        elif r["lag"] is not None and r["lag"] > BEHIND_LAG:
+            status = "BEHIND"
+        elif dlq_age is not None and dlq_age < RECENT_SEC:
+            status = "DLQ"
+        elif r["rate"] == 0 and (out_age is None or out_age > RECENT_SEC):
+            status = "IDLE"
+        else:
+            status = "OK"
+        r["status"] = status
+        if status in ("NO PARSER", "BEHIND"):
+            worst = 1
+
+    if args.json:
+        print(json.dumps({"kafka_error": kafka_error, "sources": list(rows.values())},
+                         indent=2, default=str))
+        return worst
+
+    if kafka_error:
+        print(f"[WARN] Kafka not reachable ({kafka_error}) - showing rules and files only\n")
+    w = max([14] + [len(n) for n in rows])
+    tw = max([24] + [len(r["topic"] or "") for r in rows.values()])
+    hdr = f"{'SOURCE':<{w}} {'STATUS':<9} {'TOPIC':<{tw}} {'PART':>4} {'RATE/s':>7} {'LAG':>9}  {'PARSER':<30} {'OUTPUT':>6} {'DLQ':>7}"
+    print(hdr)
+    print("-" * len(hdr))
+    for name, r in sorted(rows.items(), key=lambda kv: (kv[1]["topic"] is None, kv[0])):
+        rate = "-" if r["rate"] is None else f"{r['rate']:.0f}"
+        lag = "-" if r["lag"] is None else str(r["lag"])
+        part = "-" if r["partitions"] is None else str(r["partitions"])
+        dlq = human_size(r["dlq_bytes"]) if r["dlq_bytes"] else "-"
+        print(f"{name:<{w}} {r['status']:<9} {(r['topic'] or '(not created yet)'):<{tw}} {part:>4} "
+              f"{rate:>7} {lag:>9}  {(r['parser'] or 'NO PARSER'):<30} "
+              f"{human_age(r['output_age']):>6} {dlq:>7}")
+    print("\nNO PARSER: add rules/<source>.yaml with `source: <source>` (docs/writing-rules.md); "
+          "lines wait in logs/dlq/<source>.json.")
+    return worst
+
+
+if __name__ == "__main__":
+    sys.exit(main())
