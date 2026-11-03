@@ -1,4 +1,5 @@
 pattern_name: "roundcube"
+source: "roundcube"            # topic tlsoc.logs.roundcube, index fosstlsoc-logs-roundcube-*
 
 strategy: "multi_match"
 

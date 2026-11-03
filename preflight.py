@@ -260,6 +260,7 @@ def main():
 
     section("5. Program mapping")
     e, w = tc.validate_program_mapping(config, rules); errors += e; warnings += w
+    e, w = tc.validate_sources(config, rules); errors += e; warnings += w
     ok_if_silent(e, w)
 
     section("6. Internal IP map")

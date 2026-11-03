@@ -451,6 +451,15 @@ def run_test(lines, parser, sample_limit=5, max_events=300):
                 mapped = next((m for m in mapped if m in engines),
                               mapped[0] if mapped else parser)
             target_engine = engines.get(mapped)
+            if target_engine is None and parser not in pmap:
+                # a source name a rule declares itself (`source:` / `aliases:`)
+                for name, eng in sorted(engines.items()):
+                    cfg = getattr(eng, "config", None) or {}
+                    names = cfg.get("aliases") or []
+                    names = [names] if isinstance(names, str) else list(names)
+                    if parser == cfg.get("source") or parser in names:
+                        mapped, target_engine = name, eng
+                        break
             resolved = mapped if target_engine is not None else parser
         else:
             resolved = parser
@@ -774,6 +783,7 @@ def api_config_validate():
         e, w = tc.validate_paths(DATA_ROOT, cfg); summary["errors"] += e; summary["warnings"] += w
         e, w, rules = tc.validate_rules(DATA_ROOT, cfg); summary["errors"] += e; summary["warnings"] += w
         e, w = tc.validate_program_mapping(cfg, rules); summary["errors"] += e; summary["warnings"] += w
+        e, w = tc.validate_sources(cfg, rules); summary["errors"] += e; summary["warnings"] += w
         e, w = tc.validate_ecs_fields(rules); summary["errors"] += e; summary["warnings"] += w
         e, w = tc.validate_internal_map(DATA_ROOT, cfg); summary["errors"] += e; summary["warnings"] += w
     summary["passed"] = summary["errors"] == 0
@@ -1056,6 +1066,7 @@ def api_preflight():
         e, _ = tc.validate_ecs_fields(rules); errors += e
         print("=== 5. Program mapping ===")
         e, _ = tc.validate_program_mapping(cfg, rules); errors += e
+        e, _ = tc.validate_sources(cfg, rules); errors += e
         print("=== 6. Internal IP map ===")
         e, _ = tc.validate_internal_map(DATA_ROOT, cfg); errors += e
         if skip_live:

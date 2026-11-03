@@ -1,4 +1,6 @@
 pattern_name: "radius"
+source: "radius"            # topic tlsoc.logs.radius, index fosstlsoc-logs-radius-*
+aliases: ["radiusd", "freeradius"]
 strategy: "multi_match"
 
 # FreeRADIUS (radiusd) log. rsyslog prefixes each line with an ISO-8601 stamp

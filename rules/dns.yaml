@@ -1,4 +1,6 @@
 pattern_name: "dnsdist"
+source: "dns"            # topic tlsoc.logs.dns, index fosstlsoc-logs-dns-*
+aliases: ["dnsdist-instance1"]
 strategy: "multi_match"
 
 # rsyslog prefixes each line with an ISO-8601 stamp (with offset) - that is

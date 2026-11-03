@@ -1,4 +1,6 @@
 pattern_name: "modsec"
+source: "modsec"            # topic tlsoc.logs.modsec, index fosstlsoc-logs-modsec-*
+aliases: ["modsecurity"]
 
 strategy: "json_map"
 

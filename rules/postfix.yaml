@@ -1,4 +1,6 @@
 pattern_name: "postfix"
+source: "postfix"            # topic tlsoc.logs.postfix, index fosstlsoc-logs-postfix-*
+aliases: ["mail", "maillog"]
 
 strategy: "stateful"
 id_regex: '(?P<id>[A-Z0-9]{10,12}):'

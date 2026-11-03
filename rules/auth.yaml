@@ -1,4 +1,6 @@
 pattern_name: "linux_auth"
+source: "auth"            # topic tlsoc.logs.auth, index fosstlsoc-logs-auth-*
+aliases: ["sshd", "sudo", "su", "secure"]
 strategy: "multi_match"
 
 # Syslog RFC3164 prefix: "Jun 16 10:00:00 host ..." — no year (inferred:

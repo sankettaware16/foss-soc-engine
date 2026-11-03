@@ -1,4 +1,6 @@
 pattern_name: "squid_proxy_access"
+source: "squid"            # topic tlsoc.logs.squid, index fosstlsoc-logs-squid-*
+aliases: ["squid3"]
 strategy: "multi_match"
 
 # Every squid access line carries a Unix epoch (seconds.milliseconds) —

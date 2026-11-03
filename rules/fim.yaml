@@ -1,4 +1,5 @@
 pattern_name: "fim"
+source: "fim"            # topic tlsoc.logs.fim, index fosstlsoc-logs-fim-*
 
 strategy: "json_map"
 

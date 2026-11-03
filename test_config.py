@@ -149,8 +149,7 @@ def validate_config_shape(config):
 
     program_mapping = config.get("program_mapping")
     if program_mapping is None:
-        report("WARN", "program_mapping is missing (optional)")
-        warnings += 1
+        report("INFO", "program_mapping is empty (optional - rules declare their own source names)")
     elif not isinstance(program_mapping, dict):
         report("ERROR", "program_mapping must be a mapping")
         errors += 1
@@ -506,6 +505,59 @@ def validate_program_mapping(config, rules):
     return errors, warnings
 
 
+SOURCE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def _names(value):
+    if value is None:
+        return []
+    return [value] if isinstance(value, str) else list(value)
+
+
+def validate_sources(config, rules):
+    """Each rule's `source:` / `aliases:` names (topic tlsoc.logs.<name>,
+    index fosstlsoc-logs-<name>-*) must be valid and owned by ONE rule, and
+    `fallback:` must name existing rules."""
+    errors = 0
+    warnings = 0
+    owners = {}
+    program_mapping = config.get("program_mapping") or {}
+    for pattern_name in sorted(rules):
+        rule = rules[pattern_name]
+        declared = _names(rule.get("source")) + _names(rule.get("aliases"))
+        for name in declared:
+            if not isinstance(name, str) or not SOURCE_NAME_RE.match(name):
+                report("ERROR", f"Rule {pattern_name}: source/alias {name!r} must be "
+                                "lowercase letters, digits, '_' or '-'")
+                errors += 1
+                continue
+            if name in owners and owners[name] != pattern_name:
+                report("ERROR", f"Source name '{name}' is claimed by both "
+                                f"{owners[name]} and {pattern_name}")
+                errors += 1
+                continue
+            if name in rules and name != pattern_name:
+                report("ERROR", f"Rule {pattern_name}: alias '{name}' is the name of "
+                                "another rule and would never be used")
+                errors += 1
+                continue
+            owners[name] = pattern_name
+        for fb in _names(rule.get("fallback")):
+            if fb not in rules:
+                report("ERROR", f"Rule {pattern_name}: fallback rule '{fb}' does not exist")
+                errors += 1
+    for source_program in program_mapping:
+        if source_program in owners:
+            report("INFO", f"program_mapping '{source_program}' overrides the source "
+                           f"name declared by rule {owners[source_program]}")
+    sourceless = sorted(p for p, r in rules.items() if not r.get("source"))
+    if sourceless:
+        report("INFO", "Rules without a `source:` name (reachable only by their rule "
+                       f"name or program_mapping): {', '.join(sourceless)}")
+    report("OK", f"{len(owners)} source names map to rules automatically")
+    return errors, warnings
+
+
 def _rule_targets(rule):
     """Yield (ecs_target, location) for every mapping value and static key."""
     out = []
@@ -699,6 +751,11 @@ def main():
 
     report("INFO", "Validating program mapping")
     errors, warnings = validate_program_mapping(config, rules)
+    total_errors += errors
+    total_warnings += warnings
+
+    report("INFO", "Validating source names")
+    errors, warnings = validate_sources(config, rules)
     total_errors += errors
     total_warnings += warnings
 

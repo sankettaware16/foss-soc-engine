@@ -1,4 +1,6 @@
 pattern_name: "apache_access"
+source: "apache"            # topic tlsoc.logs.apache, index fosstlsoc-logs-apache-*
+aliases: ["apache2", "httpd"]
 
 strategy: "stateless"
 

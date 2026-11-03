@@ -1,4 +1,7 @@
 pattern_name: "nginx_access"
+source: "nginx"            # topic tlsoc.logs.nginx, index fosstlsoc-logs-nginx-*
+aliases: ["nginx_error", "vhnginx_access", "vhnginx_error"]
+fallback: ["apache_access"]   # plain access lines without a syslog prefix
 
 strategy: "multi_match"
 

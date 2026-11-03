@@ -1,4 +1,5 @@
 pattern_name: "openvas"
+source: "openvas"            # topic tlsoc.logs.openvas, index fosstlsoc-logs-openvas-*
 strategy: "xml_xpath"
 
 # Iterate over every vulnerability found in the report

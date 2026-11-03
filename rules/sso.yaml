@@ -1,4 +1,5 @@
 pattern_name: "sso"
+source: "sso"            # topic tlsoc.logs.sso, index fosstlsoc-logs-sso-*
 strategy: "multi_match"
 
 # Single sign-on server + its LDAP proxy. Every line is

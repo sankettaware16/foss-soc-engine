@@ -1,4 +1,6 @@
 pattern_name: "policyd_spf"
+source: "policyd_spf"            # topic tlsoc.logs.policyd_spf, index fosstlsoc-logs-policyd_spf-*
+aliases: ["policyd-spf"]
 strategy: "multi_match"
 
 # pypolicyd-spf (policyd-spf), the Postfix SPF policy service on mail relays.

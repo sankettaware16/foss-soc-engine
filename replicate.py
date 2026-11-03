@@ -13,7 +13,8 @@ pipeline would break:
   * rsyslog wouldn't even forward this tag to Kafka
   * the engine isn't subscribed to the Kafka topic rsyslog sends to
   * rsyslog and the engine point at different Kafka brokers
-  * there's no program_mapping for this source_program (-> DLQ)
+  * no rule handles this source_program (no rule `source:`/`aliases:` and no
+    program_mapping) -> its lines are kept in the DLQ until a parser exists
   * the mapped rule's regex doesn't actually match these lines
 
 When a mapping is missing or a rule doesn't match, it auto-detects which rule
@@ -51,14 +52,19 @@ def parse_rsyslog(path):
     text = open(path).read()
 
     inputs = []
+    input_rulesets = {}
     for m in re.finditer(r"input\s*\(([^)]*)\)", text, re.S):
         body = m.group(1)
         f = re.search(r'File\s*=\s*"([^"]+)"', body)
         t = re.search(r'Tag\s*=\s*"([^"]+)"', body)
+        r = re.search(r'ruleset\s*=\s*"([^"]+)"', body)
         if f and t:
-            inputs.append((f.group(1), t.group(1).rstrip(":")))
+            tag = t.group(1).rstrip(":")
+            inputs.append((f.group(1), tag))
+            if r:
+                input_rulesets[tag] = r.group(1)
 
-    topic = broker = None
+    topic = broker = topic_template = None
     am = re.search(r"action\s*\(([^)]*omkafka[^)]*)\)", text, re.S)
     if am:
         body = am.group(1)
@@ -67,8 +73,18 @@ def parse_rsyslog(path):
         topic = mt.group(1) if mt else None
         if mb:
             broker = [b.strip().strip('"').strip("'") for b in mb.group(1).split(",") if b.strip()]
+        # dynaTopic: `topic` names a template such as "tlsoc.logs.%programname%"
+        if topic and re.search(r'dynaTopic\s*=\s*"on"', body, re.I):
+            tt = re.search(r'template\s*\(\s*name\s*=\s*"%s"[^)]*?string\s*=\s*"([^"]+)"'
+                           % re.escape(topic), text, re.S)
+            topic_template = tt.group(1) if tt else None
 
     forward_tags = set(re.findall(r"\$programname\s*==\s*'([^']+)'", text))
+    # Inputs bound straight to a ruleset that contains omkafka are forwarded too.
+    kafka_rulesets = {m.group(1) for m in re.finditer(
+        r'ruleset\s*\(\s*name\s*=\s*"([^"]+)"\s*\)\s*\{(.*?)\n\}', text, re.S)
+        if "omkafka" in m.group(2)}
+    forward_tags |= {tag for tag, rset in input_rulesets.items() if rset in kafka_rulesets}
 
     meta_static = {}
     tm = re.search(r"template\s*\([^)]*KafkaMailEnvelope.*?\)\s*\{(.*?)\}", text, re.S)
@@ -79,6 +95,7 @@ def parse_rsyslog(path):
     return {
         "inputs": inputs,
         "topic": topic,
+        "topic_template": topic_template,
         "broker": broker or [],
         "forward_tags": forward_tags,
         "meta_static": meta_static,
@@ -200,14 +217,21 @@ def main():
     # what makes replicate.py safe to use as a deploy gate.
     pipeline_issues = []
     if rs:
-        if rs["topic"] and engine_topic_re:
-            if engine_topic_re.search(rs["topic"]):
+        if rs["topic_template"]:
+            per_tag = {tag: rs["topic_template"].replace("%programname%", tag)
+                       for _, tag in sources}
+        else:
+            per_tag = {tag: rs["topic"] for _, tag in sources} if rs["topic"] else {}
+        for topic in sorted(set(per_tag.values())):
+            if not engine_topic_re:
+                break
+            if engine_topic_re.search(topic):
                 via = "  (matched only by a '.*' wildcard)" if ".*" in engine_topic else ""
-                print(f"[{OKW}] Kafka topic '{rs['topic']}' is consumed by the engine{via}")
+                print(f"[{OKW}] Kafka topic '{topic}' is consumed by the engine{via}")
             else:
-                print(f"[{ERRW}] rsyslog sends to topic '{rs['topic']}' but engine.input_topic "
+                print(f"[{ERRW}] rsyslog sends to topic '{topic}' but engine.input_topic "
                       f"'{engine_topic}' does NOT match it - engine will never see these logs")
-                pipeline_issues.append(f"kafka topic mismatch ('{rs['topic']}' vs '{engine_topic}')")
+                pipeline_issues.append(f"kafka topic mismatch ('{topic}' vs '{engine_topic}')")
         rsb = set(rs["broker"])
         eb = set(str(b) for b in engine_brokers)
         if rsb and eb and rsb.isdisjoint(eb):
@@ -237,28 +261,36 @@ def main():
         # 2. mapping: source_program -> rule (or a CHAIN of rules)
         mapped = program_map.get(tag)
         if mapped is None:
-            chain_names = [tag]
+            chain_names = []
         elif isinstance(mapped, list):
             chain_names = [str(n) for n in mapped]
         else:
             chain_names = [mapped]
-        chain = [(n, registry.engines.get(n)) for n in chain_names]
-        missing = [n for n, e in chain if e is None]
-        procs = [(n, e) for n, e in chain if e is not None]
+        missing = [n for n in chain_names if n not in registry.engines]
+        procs = registry.get_processors(tag)
         proc = procs[0][1] if procs else None
-        resolved = " -> ".join(n for n, _ in procs) if procs else chain_names[0]
+        resolved = " -> ".join(n for n, _ in procs) if procs else tag
         if proc:
-            how = (f"via program_mapping -> '{resolved}'" if tag in program_map
-                   else f"(direct rule name '{resolved}')")
+            if tag in program_map:
+                how = f"via program_mapping -> '{resolved}'"
+            elif tag in registry.engines:
+                how = f"(direct rule name '{resolved}')"
+            else:
+                how = f"(rule '{procs[0][0]}' declares source name '{tag}')"
             label = "chain" if len(procs) > 1 else "rule"
             print(f"   [{OKW}] source_program '{tag}' resolves to {label} '{resolved}' {how}")
             for n in missing:
                 print(f"   [{ERRW}] chain rule '{n}' does not exist - fix program_mapping")
                 source_ok = False
-        else:
-            print(f"   [{ERRW}] no rule for source_program '{tag}' "
-                  f"- engine would DLQ every line as 'no_matching_rule'")
+        elif missing:
+            print(f"   [{ERRW}] program_mapping for '{tag}' names no existing rule "
+                  f"({', '.join(missing)}) - fix program_mapping")
             source_ok = False
+        else:
+            # Not a pipeline fault: the lines are kept (logs/dlq/<tag>.json)
+            # until a rule declares `source: <tag>`.
+            print(f"   [{WARNW}] no parser yet for '{tag}' - its lines are kept in "
+                  f"logs/dlq/{tag}.json until a rule declares source: \"{tag}\"")
 
         # 3. sample + parse
         lines = read_sample(real_path, args.limit)
@@ -311,7 +343,7 @@ def main():
                 print(f"        {D}program_mapping:\n          {tag}: \"{best}\"{X}")
             else:
                 print(f"   {B}-> suggestion:{X} no existing rule matches these lines - write a new rule "
-                      f"(see docs/writing-rules.md or ecs_helper)")
+                      f"rules/{tag}.yaml with source: \"{tag}\" (see docs/writing-rules.md or ecs_helper)")
 
         (healthy if source_ok else issues).append(tag)
         print()
