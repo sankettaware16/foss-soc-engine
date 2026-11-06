@@ -263,6 +263,12 @@ def test_status_table():
         n, owners = sources.engine_workers(tmp)
         check("single worker: stats.json", n == 1 and owners == {"tlsoc.logs.auth": {"w0": [0, 1, 2]}},
               f"got {n} {owners}")
+        cfg = {"kafka": {"input_topic": r"^tlsoc\.logs\..+$"}, "paths": {"output_dir": tmp}}
+        rows = {r["source"]: r for r in sources.collect(cfg, HERE, use_kafka=False, log_dir=tmp)["sources"]}
+        auth = rows.get("auth") or {}
+        check("no Kafka: topics and partitions from the workers' stats",
+              auth.get("topic") == "tlsoc.logs.auth" and auth.get("partitions") == 3
+              and auth.get("workers") == {"w0": [0, 1, 2]} and auth.get("lag") is None, f"got {auth}")
         os.remove(os.path.join(tmp, "engine.pid"))
         check("engine not running: no workers", sources.engine_workers(tmp) == (0, {}))
 

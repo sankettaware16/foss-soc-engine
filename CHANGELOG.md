@@ -55,6 +55,11 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 - Web UI Monitor counted the supervisor process as a worker (`Workers 4/3`
   with three workers).
+- Web UI Sources page showed only dashes (`0` Kafka topics) when the UI ran in
+  its own virtual env: `webui/requirements-ui.txt` did not include
+  `kafka-python-ng`. It does now, the launchers top up an existing env, the
+  error says how to fix it, and without Kafka the page still shows the topics
+  and partitions each running worker reports.
 - **Index template did not apply to the TLSOC stack's indices.** The template
   matched only `soc-*`, but the stack's Logstash pipeline writes
   `fosstlsoc-logs-<service>-YYYY.MM.dd`, so those indices fell back to dynamic

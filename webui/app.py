@@ -1117,7 +1117,8 @@ def api_sources():
                 return jsonify({"error": str(e)}), 500
             _SOURCES["prev"] = data.pop("snapshot")
             if not KAFKA_LIB_OK:
-                data["kafka_error"] = "kafka-python is not installed"
+                data["kafka_error"] = ("kafka-python-ng is not installed in the Web UI's Python; "
+                                       "run: pip install -r webui/requirements-ui.txt")
             data["input_topic"] = (load_config().get("kafka") or {}).get("input_topic")
             _SOURCES["data"], _SOURCES["at"] = data, time.time()
         return jsonify(_SOURCES["data"])

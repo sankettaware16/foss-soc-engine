@@ -186,8 +186,14 @@ def collect(cfg, base, sample_sec=5.0, use_kafka=True, prev=None, log_dir=None):
             kafka_error = str(e) or e.__class__.__name__
     workers, owners = engine_workers(log_dir)
 
+    known = dict(topics)
+    for topic, by_worker in owners.items():  # no Kafka: the workers still name their topics
+        if topic not in known:
+            known[topic] = {"partitions": len({p for plist in by_worker.values() for p in plist}),
+                            "end": None, "lag": None, "rate": None}
+
     rows = {}
-    for topic, info in topics.items():
+    for topic, info in known.items():
         name = source_from_topic(topic)
         if name is None:  # an older shared topic: its lines route by their own tag
             rows[topic] = {"source": topic, "topic": topic, "shared": True, **info}

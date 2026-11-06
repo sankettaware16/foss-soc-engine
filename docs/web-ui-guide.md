@@ -43,8 +43,9 @@ FOSS-SOC-UI/
 - **Windows:** double‑click `webui/Start-SOC-UI.bat`
 - **Linux / macOS:** run `./webui/start-soc-ui.sh`
 
-The first run quietly creates a private environment and installs two tiny
-packages (Flask + PyYAML). Every run after that just opens the console.
+The first run quietly creates a private environment and installs three small
+packages (Flask, PyYAML and kafka-python-ng). Every run after that just opens
+the console.
 
 ### C) Straight from Python (for developers)
 
@@ -201,7 +202,10 @@ tag `squid` → Kafka topic `tlsoc.logs.squid` → the rule with `source: "squid
   SHARED (an older single topic routed by each line's tag).
 
 It refreshes every 10 seconds and is the same table as `python3 sources.py` on
-the server. A newly onboarded source appears here within `topic_refresh_sec`
+the server. Topics, partitions, rate and lag come from Kafka, so the Web UI's own
+Python needs `kafka-python-ng` (in `webui/requirements-ui.txt`; the launchers
+install it). Without it, or when Kafka is unreachable, the page says so and still
+shows the topics and partitions each running worker reports. A newly onboarded source appears here within `topic_refresh_sec`
 (30 s) of its first line. The Dashboard shows the same sources as coloured chips.
 
 ### Start / stop / restart from the browser (optional)
@@ -466,12 +470,13 @@ To reach it from other computers, bind it to **all interfaces** with
 ### Step 1 — get the code onto the server
 
 The Windows `.exe` does **not** run on Linux. On Ubuntu you run it from Python
-(no compiler needed — only Flask + PyYAML, which install as wheels):
+(no compiler needed — only Flask, PyYAML and kafka-python-ng, which install as
+wheels):
 
 ```bash
 # copy the project to the server, e.g. /opt/foss-soc-engine, then:
 cd /opt/foss-soc-engine
-./webui/start-soc-ui.sh        # first run makes a venv + installs Flask/PyYAML
+./webui/start-soc-ui.sh        # first run makes a venv + installs requirements-ui.txt
 ```
 
 (Need `sudo apt install -y python3 python3-venv` first if Python isn't present.)

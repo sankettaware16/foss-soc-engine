@@ -3,8 +3,9 @@ REM ====================================================================
 REM  FOSS SOC Engine - Web UI launcher (Windows)
 REM  Lightweight fallback when you already have Python 3 installed.
 REM  (For a true no-Python "download and run", use FOSS-SOC-UI.exe.)
-REM  On first run it creates a private virtual env and installs the two
-REM  tiny dependencies (Flask + PyYAML). After that it just launches.
+REM  On first run it creates a private virtual env and installs the
+REM  small dependencies (Flask, PyYAML, kafka-python-ng). After that it
+REM  just launches; an older env is topped up when a dependency is missing.
 REM ====================================================================
 setlocal
 title FOSS SOC Engine - Web UI
@@ -32,7 +33,7 @@ if not exist "%VENV%\Scripts\python.exe" (
 )
 set "VPY=%VENV%\Scripts\python.exe"
 
-"%VPY%" -c "import flask, yaml" 1>nul 2>nul
+"%VPY%" -c "import flask, yaml, kafka" 1>nul 2>nul
 if errorlevel 1 (
   echo  Installing dependencies ^(one time only^)...
   "%VPY%" -m pip install --upgrade pip 1>nul

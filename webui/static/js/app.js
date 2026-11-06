@@ -1462,7 +1462,7 @@ function renderSources(d) {
   const t = srcTotals(d);
   const cards = [
     { v: `${t.flowing}`, k: "Sources flowing", cls: t.flowing ? "good" : "" },
-    { v: t.topics, k: "Kafka topics", cls: "acc" },
+    { v: t.topics || (d.kafka_error ? "—" : 0), k: "Kafka topics", cls: "acc" },
     { v: d.workers || "—", k: "Engine workers", cls: "" },
     { v: t.rate == null ? "—" : fmtNum(Math.round(t.rate)), k: "Arriving / sec", cls: "" },
     { v: fmtNum(t.lag), k: "Waiting (lag)", cls: t.lag > 100000 ? "warn" : "" },
@@ -1473,7 +1473,7 @@ function renderSources(d) {
   $("#src-count").textContent = `(${t.rows.length})`;
 
   const note = [];
-  if (d.kafka_error) note.push(`<span class="er">Kafka not reachable (${esc(d.kafka_error)}) — showing rules and files only.</span>`);
+  if (d.kafka_error) note.push(`<span class="er">Kafka not reachable (${esc(d.kafka_error)}) — rate and lag are unknown; topics and workers come from the engine's own stats.</span>`);
   if (d.input_topic) note.push(`The engine reads every topic matching <code>${esc(d.input_topic)}</code>.`);
   if (!d.workers) note.push("The engine is not running (no fresh heartbeat), so no workers are shown.");
   $("#src-note").innerHTML = note.join(" ");

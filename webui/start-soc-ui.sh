@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # ====================================================================
 #  FOSS SOC Engine - Web UI launcher (Linux / macOS)
-#  On first run it creates a private virtual env and installs the two
-#  tiny dependencies (Flask + PyYAML). After that it just launches.
+#  On first run it creates a private virtual env and installs the
+#  small dependencies (Flask, PyYAML, kafka-python-ng). After that it
+#  just launches; an older env is topped up when a dependency is missing.
 #
 #  Usage:  ./start-soc-ui.sh        (cd into webui/ first, or run by path)
 # ====================================================================
@@ -23,7 +24,7 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 VPY="$VENV/bin/python"
 
-if ! "$VPY" -c "import flask, yaml" >/dev/null 2>&1; then
+if ! "$VPY" -c "import flask, yaml, kafka" >/dev/null 2>&1; then
   echo "Installing dependencies (one time only)..."
   "$VPY" -m pip install --upgrade pip >/dev/null
   "$VPY" -m pip install -r "$ROOT/webui/requirements-ui.txt"
