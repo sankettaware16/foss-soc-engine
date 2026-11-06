@@ -55,6 +55,11 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 - Web UI Monitor counted the supervisor process as a worker (`Workers 4/3`
   with three workers).
+- Sources page and `sources.py` list only sources that have a topic or data.
+  Parsers whose source never sent a line (no topic, since topics are created by
+  a source's first line) are summed up in one line; `--all` / **parsers without
+  data** lists them as rows. With many parsers the table stays the size of the
+  sources a site really has.
 - Web UI Sources page showed only dashes (`0` Kafka topics) when the UI ran in
   its own virtual env: `webui/requirements-ui.txt` did not include
   `kafka-python-ng`. It does now, the launchers top up an existing env, the

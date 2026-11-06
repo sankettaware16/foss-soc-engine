@@ -189,8 +189,10 @@ Click **Sources** in the sidebar. Every source has one name end to end (rsyslog
 tag `squid` → Kafka topic `tlsoc.logs.squid` → the rule with `source: "squid"`
 → index `fosstlsoc-logs-squid-*`), and this page shows each one with:
 
-- its **topic** and number of **partitions**, or *not created yet* for a source
-  a rule knows but no server sends yet;
+- its **topic** and number of **partitions**. Topics are not made in advance:
+  a parser whose source has not sent a line yet has no topic, and is listed
+  only by name under the table (tick **parsers without data** to see them as
+  rows);
 - **arriving / s** and **lag** (messages waiting for the engine);
 - **workers · partitions** — which engine worker reads which partitions
   (`w0 · 0,3`), so you can see several workers sharing a busy source;

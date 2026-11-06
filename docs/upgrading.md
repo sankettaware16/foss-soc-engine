@@ -202,7 +202,9 @@ identical events). Moving to per-source topics (`tlsoc.logs.<source>`) gives
 per-source lag, parallel workers for busy sources, and isolation (a burst of
 one source no longer delays the others). To move without a gap:
 
-1. Create the topics (TLSOCDockerDeploy: `sudo ./kafka/setup-topics.sh`).
+1. Nothing to create: each source's topic appears with its first line
+   (TLSOCDockerDeploy: `sudo ./kafka/setup-topics.sh --install-cron` gives busy
+   sources their partitions automatically).
 2. Consume both: `input_topic: '^(tlsoc\.logs\..+|<old-topic>)$'` (restart the engine;
    keep the same `group_id`, so the old topic resumes where it was).
 3. Re-run `tlsoc-onboard.sh` on each server (or switch the omkafka action to

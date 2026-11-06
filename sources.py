@@ -21,6 +21,7 @@ older shared topic whose lines route by their own source_program).
     python3 sources.py --sample 10     # steadier rate numbers
     python3 sources.py --json          # machine-readable
     python3 sources.py --no-kafka      # rules / files only
+    python3 sources.py --all           # also parsers whose source never sent
 
 Exit code: 0 when no source is in NO PARSER or BEHIND, else 1.
 
@@ -246,6 +247,8 @@ def main():
                     help="seconds between the two offset samples used for the rate (0 = skip)")
     ap.add_argument("--no-kafka", action="store_true", help="skip Kafka (rules and files only)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--all", action="store_true",
+                    help="also list parsers whose source has not sent a line yet (no topic)")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config)) or {}
@@ -253,6 +256,9 @@ def main():
     data = collect(cfg, base, args.sample, use_kafka=not args.no_kafka)
     rows = data["sources"]
     worst = int(any(r["status"] in ("NO PARSER", "BEHIND") for r in rows))
+    ready = [r["source"] for r in rows if r["status"] == "WAITING" and not r["topic"]]
+    if not args.all:
+        rows = [r for r in rows if not (r["status"] == "WAITING" and not r["topic"])]
 
     if args.json:
         data.pop("snapshot")
@@ -273,9 +279,15 @@ def main():
         part = "-" if r["partitions"] is None else str(r["partitions"])
         dlq = human_size(r["dlq_bytes"]) if r["dlq_bytes"] else "-"
         wk = ",".join(sorted(r["workers"])) or "-"
-        print(f"{r['source']:<{w}} {r['status']:<9} {(r['topic'] or '(not created yet)'):<{tw}} {part:>4} "
+        print(f"{r['source']:<{w}} {r['status']:<9} {(r['topic'] or '(no data yet)'):<{tw}} {part:>4} "
               f"{rate:>7} {lag:>9}  {wk:<8} {(r['parser'] or 'NO PARSER'):<30} "
               f"{human_age(r['output_age']):>6} {dlq:>7}")
+    if not rows:
+        print("(no source has sent a line yet; each source's topic appears with its first line)")
+    if ready and not args.all:
+        more = f" and {len(ready) - 12} more" if len(ready) > 12 else ""
+        print(f"\n{len(ready)} more parsers ready, waiting for a first line (no topic until then): "
+              f"{', '.join(ready[:12])}{more}  (--all lists them)")
     if data["workers"]:
         print(f"\nEngine workers: {data['workers']}")
     print("\nNO PARSER: add rules/<source>.yaml with `source: <source>` (docs/writing-rules.md); "

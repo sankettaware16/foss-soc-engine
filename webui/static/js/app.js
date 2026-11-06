@@ -1418,6 +1418,7 @@ const SRC_STATUS = {
   SHARED: ["warn", "An older shared topic; its lines are routed by their own tag (program_mapping)."],
 };
 let SRC_TIMER = null;
+let SRC_LAST = null;
 
 function startSources() {
   pollSources();
@@ -1428,6 +1429,9 @@ function stopSources() {
   if (SRC_TIMER) { clearInterval(SRC_TIMER); SRC_TIMER = null; }
 }
 $("#src-refresh").addEventListener("click", pollSources);
+$("#src-all").addEventListener("change", () => { if (SRC_LAST) renderSources(SRC_LAST); });
+// A parser whose source has not sent a line yet: no topic, nothing to show but its name.
+const srcIsReady = (r) => r.status === "WAITING" && !r.topic;
 
 function fmtAge(sec) {
   if (sec == null) return "—";
@@ -1459,7 +1463,10 @@ async function pollSources() {
 }
 
 function renderSources(d) {
+  SRC_LAST = d;
   const t = srcTotals(d);
+  const ready = t.rows.filter(srcIsReady);
+  const rows = $("#src-all").checked ? t.rows : t.rows.filter((r) => !srcIsReady(r));
   const cards = [
     { v: `${t.flowing}`, k: "Sources flowing", cls: t.flowing ? "good" : "" },
     { v: t.topics || (d.kafka_error ? "—" : 0), k: "Kafka topics", cls: "acc" },
@@ -1470,7 +1477,7 @@ function renderSources(d) {
   ];
   $("#src-stats").innerHTML = cards.map((c) =>
     `<div class="stat ${c.cls}"><div class="v">${c.v}</div><div class="k">${c.k}</div></div>`).join("");
-  $("#src-count").textContent = `(${t.rows.length})`;
+  $("#src-count").textContent = rows.length === t.rows.length ? `(${rows.length})` : `(${rows.length} of ${t.rows.length})`;
 
   const note = [];
   if (d.kafka_error) note.push(`<span class="er">Kafka not reachable (${esc(d.kafka_error)}) — rate and lag are unknown; topics and workers come from the engine's own stats.</span>`);
@@ -1478,13 +1485,13 @@ function renderSources(d) {
   if (!d.workers) note.push("The engine is not running (no fresh heartbeat), so no workers are shown.");
   $("#src-note").innerHTML = note.join(" ");
 
-  $("#src-table tbody").innerHTML = t.rows.map((r) => {
+  $("#src-table tbody").innerHTML = rows.map((r) => {
     const workers = Object.entries(r.workers || {}).sort()
       .map(([w, p]) => `<span class="wchip">${esc(w)} · ${p.join(",")}</span>`).join("") || "—";
     return `<tr>
       <td class="rname">${esc(r.source)}</td>
       <td>${srcBadge(r.status)}</td>
-      <td>${r.topic ? `<code>${esc(r.topic)}</code>` : '<span class="muted small">not created yet</span>'}</td>
+      <td>${r.topic ? `<code>${esc(r.topic)}</code>` : '<span class="muted small">no data yet</span>'}</td>
       <td class="num">${r.partitions == null ? "—" : r.partitions}</td>
       <td class="num ${r.rate ? "ok" : ""}">${r.rate == null ? "—" : fmtNum(Math.round(r.rate))}</td>
       <td class="num ${r.lag > 100000 ? "er" : ""}">${r.lag == null ? "—" : fmtNum(r.lag)}</td>
@@ -1492,7 +1499,15 @@ function renderSources(d) {
       <td>${r.parser ? esc(r.parser) : '<span class="er">no parser</span>'}</td>
       <td class="num">${fmtAge(r.output_age)}</td>
       <td class="num">${r.dlq_bytes ? fmtBytes(r.dlq_bytes) : "—"}</td></tr>`;
-  }).join("") || '<tr><td colspan="10" class="muted small">No sources: no topic matches input_topic and no rule declares a source.</td></tr>';
+  }).join("") || `<tr><td colspan="10" class="muted small">${t.rows.length
+    ? "No source has sent a line yet. Each source's topic appears with its first line."
+    : "No sources: no topic matches input_topic and no rule declares a source."}</td></tr>`;
+
+  const names = ready.map((r) => r.source);
+  const shown = names.slice(0, 12).map((n) => `<code>${esc(n)}</code>`).join(" ");
+  $("#src-waiting").innerHTML = ready.length && !$("#src-all").checked
+    ? `${ready.length} more parser${ready.length > 1 ? "s" : ""} ready, waiting for a first line (no topic until then): ${shown}${names.length > 12 ? ` and ${names.length - 12} more` : ""}.`
+    : "";
 
   $("#src-legend").innerHTML = Object.entries(SRC_STATUS).map(([k, [cls, tip]]) =>
     `<div class="cap"><span>${esc(tip)}</span><span class="sbadge ${cls}">${esc(k)}</span></div>`).join("");

@@ -28,10 +28,10 @@ SOC_WORKERS=8 sudo systemctl restart foss-soc
 
 **One rule to remember:** a partition is only ever read by one worker, so the
 partitions of all topics together cap how many workers can be busy. TLSOC uses
-one topic per source (`tlsoc.logs.<source>`); TLSOCDockerDeploy creates the
-standard ones with a partition count per source (`kafka/topics.conf`: 6 for
-busy sources such as squid and dns, 3 by default, 1 for postfix) and new sources
-get `KAFKA_DEFAULT_PARTITIONS` (3). Raise a busy source later with:
+one topic per source (`tlsoc.logs.<source>`), created by the source's first
+line with 1 partition. TLSOCDockerDeploy's cron job then raises busy sources to
+their count in `kafka/topics.conf` (6 for squid and dns, 3 for other busy
+sources); everything else stays at 1. Raise a source yourself with:
 
 ```bash
 kafka-topics.sh --alter --topic tlsoc.logs.squid --partitions 12 --bootstrap-server localhost:9092
@@ -48,8 +48,8 @@ behind squid on the shared topic and ≤ 1.4 s on their own topic.
 all partitions of its topic and several workers share a busy source. (Without
 it, omkafka writes every message to partition 0.) **Stateful** rules (postfix:
 multi-line transactions correlated in Redis) need the lines of one transaction
-in order, so give their topic **one** partition — `kafka/topics.conf` does this
-for postfix.
+in order, so their topic must keep **one** partition: the default for every new
+topic. Never list such a source in `kafka/topics.conf` with more.
 
 ## The Kafka envelope contract (bring your own producer)
 
