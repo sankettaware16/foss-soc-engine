@@ -158,6 +158,9 @@ class HealthMonitor:
         self.total_events = 0
         self.total_errors = 0
         self.rule_stats = {}
+        # Callable returning the Kafka partitions this worker owns right now
+        # (consumer.assignment); written to the stats file for sources.py / UI.
+        self.assignment = None
 
     def record_event(self):
         self.events_in_window += 1
@@ -222,6 +225,14 @@ class HealthMonitor:
             "window_sec": round(elapsed, 1),
             "parser_stats": self.rule_stats,
         }
+        if self.assignment is not None:
+            try:
+                owned = {}
+                for tp in self.assignment():
+                    owned.setdefault(tp.topic, []).append(tp.partition)
+                stats["assignment"] = {t: sorted(p) for t, p in sorted(owned.items())}
+            except Exception:
+                pass
 
         try:
             with open(os.path.join(LOG_DIR, f"stats{self.suffix}.json"), "w") as f:
@@ -477,6 +488,7 @@ def run_worker(worker_id, workers, config):
     monitor = HealthMonitor(
         suffix=suffix, interval=metrics_interval(config), worker_id=worker_id
     )
+    monitor.assignment = consumer.assignment
     # In single-process mode this worker IS the engine, so it owns the runtime
     # heartbeat. In multi-worker mode the supervisor writes it instead.
     if workers == 1:

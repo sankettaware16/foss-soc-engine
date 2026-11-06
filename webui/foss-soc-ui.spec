@@ -26,7 +26,7 @@ a = Analysis(
         'core.engine', 'core.schema', 'core.registry', 'core.ecs_schema',
         'core.timeparse',
         'utils.geoip', 'utils.fastjson',
-        'test_config', 'preflight', 'ecs_helper',
+        'test_config', 'preflight', 'ecs_helper', 'sources',
     ],
     hookspath=[],
     hooksconfig={},

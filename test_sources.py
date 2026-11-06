@@ -12,6 +12,9 @@ Covers:
      envelopes with an unknown tag; other topics behave as before.
   5. New sources (main.NewSourceStart): a never-read SMALL topic starts at
      its first message, a never-read big topic does not replay.
+  6. Status table (sources.py, also the Web UI's Sources page): each worker's
+     stats file lists the partitions it owns; stale workers are ignored; the
+     rate can be measured against an earlier sample; lag per topic.
 
 No Kafka/Redis needed. Run:  python3 test_sources.py  (exit 0 = pass)
 """
@@ -217,8 +220,84 @@ def test_new_source_start():
     check("new_source_backfill: 0 turns it off", not off.consumer.seeks)
 
 
+def test_status_table():
+    import time
+    import types
+    import kafka
+    import sources
+    from kafka import TopicPartition as TP
+    tmp = tempfile.mkdtemp()
+    try:
+        # a worker writes the partitions it owns into its stats file
+        saved = engine_main.LOG_DIR
+        engine_main.LOG_DIR = tmp
+        try:
+            mon = engine_main.HealthMonitor(suffix=".w1", interval=1, worker_id=1)
+            mon.assignment = lambda: {TP("tlsoc.logs.squid", 3), TP("tlsoc.logs.squid", 0),
+                                      TP("tlsoc.logs.dns", 1)}
+            mon.window_start -= 5
+            mon.flush_if_needed(logging.getLogger("t"))
+        finally:
+            engine_main.LOG_DIR = saved
+        st = json.load(open(os.path.join(tmp, "stats.w1.json")))
+        check("worker stats list owned partitions",
+              st.get("assignment") == {"tlsoc.logs.dns": [1], "tlsoc.logs.squid": [0, 3]},
+              f"got {st.get('assignment')}")
+
+        def put(name, data, age=0):
+            path = os.path.join(tmp, name)
+            with open(path, "w") as f:
+                json.dump(data, f)
+            if age:
+                os.utime(path, (time.time() - age, time.time() - age))
+        put("engine.pid", {"role": "supervisor", "workers": 3})
+        put("stats.w0.json", {"worker_id": 0, "assignment": {"tlsoc.logs.squid": [1, 2]}})
+        put("stats.w2.json", {"worker_id": 2, "assignment": {"tlsoc.logs.squid": [4]}}, age=600)
+        n, owners = sources.engine_workers(tmp)
+        check("supervisor: workers and owners per topic",
+              n == 3 and owners.get("tlsoc.logs.squid") == {"w0": [1, 2], "w1": [0, 3]},
+              f"got {n} {owners}")
+        check("stale worker stats are ignored", "w2" not in owners.get("tlsoc.logs.squid", {}))
+        put("engine.pid", {"role": "worker", "workers": 1})
+        put("stats.json", {"worker_id": 0, "assignment": {"tlsoc.logs.auth": [0, 1, 2]}})
+        n, owners = sources.engine_workers(tmp)
+        check("single worker: stats.json", n == 1 and owners == {"tlsoc.logs.auth": {"w0": [0, 1, 2]}},
+              f"got {n} {owners}")
+        os.remove(os.path.join(tmp, "engine.pid"))
+        check("engine not running: no workers", sources.engine_workers(tmp) == (0, {}))
+
+        class FakeKC:
+            def __init__(self, **kw): pass
+            def topics(self): return {"tlsoc.logs.squid", "other"}
+            def partitions_for_topic(self, t): return {0, 1}
+            def end_offsets(self, tps): return {tp: 500 for tp in tps}
+            def close(self): pass
+
+        class FakeAdmin:
+            def __init__(self, **kw): pass
+            def list_consumer_group_offsets(self, g):
+                return {TP("tlsoc.logs.squid", 0): types.SimpleNamespace(offset=400)}
+            def close(self): pass
+        real = kafka.KafkaConsumer, kafka.KafkaAdminClient
+        kafka.KafkaConsumer, kafka.KafkaAdminClient = FakeKC, FakeAdmin
+        try:
+            cfg = {"kafka": {"bootstrap_servers": ["x:9092"], "group_id": "g",
+                             "input_topic": r"^tlsoc\.logs\..+$"}}
+            v = sources.kafka_view(cfg, 0, prev={"t": time.time() - 10,
+                                                 "ends": {"tlsoc.logs.squid": 900}})
+        finally:
+            kafka.KafkaConsumer, kafka.KafkaAdminClient = real
+        sq = v.get("tlsoc.logs.squid") or {}
+        check("only topics matching input_topic", list(v) == ["tlsoc.logs.squid"], f"got {list(v)}")
+        check("lag over committed partitions", sq.get("lag") == 100, f"got {sq}")
+        check("rate against an earlier sample", sq.get("rate") and 9 < sq["rate"] < 11, f"got {sq}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     test_new_source_start()
+    test_status_table()
     test_source_names()
     test_program_mapping_wins()
     test_conflicts()

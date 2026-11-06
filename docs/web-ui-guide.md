@@ -117,8 +117,9 @@ The left sidebar sections:
 
 | Section        | What it's for |
 |----------------|---------------|
-| **Dashboard**  | A health overview: how many rules loaded, which strategies, and which optional features (Redis/GeoIP/etc.) are available. |
+| **Dashboard**  | A health overview: how many rules loaded, which strategies, which optional features (Redis/GeoIP/etc.) are available, and which log sources are flowing. |
 | **Monitor**    | A **live** view of the running engine — events/sec, totals, errors, uptime, which rules are busy, per-worker stats and CPU/RAM. Updates itself; no refresh needed. |
+| **Sources**    | One row per log source: its Kafka topic, partitions, how fast lines arrive, how many wait (lag), which workers read it, its parser and a status. |
 | **Test Log**   | The main tool. Paste log lines or upload a file, choose a parser, and see the parsed result. |
 | **Rules**      | View, edit, create and delete parser rules — with live ECS field checking. |
 | **Config**     | Edit `config.yaml` and validate it before going live. |
@@ -144,7 +145,8 @@ A big status light shows the engine state:
   launched, or it isn't receiving any logs).
 - 🔴 **Stopped** — the engine is not running.
 
-Next to it: **uptime**, how many **workers** are alive, the Kafka **topic** and
+Next to it: **uptime**, how many **workers** are alive, the Kafka **topics** the
+engine reads (the `input_topic` pattern, with a link to the per-source view) and
 consumer **group**, and the process **PID(s)**. Below that, live panels:
 
 - **Events / sec (EPS)** — current throughput, with a moving graph of the last
@@ -156,8 +158,9 @@ consumer **group**, and the process **PID(s)**. Below that, live panels:
   is busy and which is failing). *Expired* = multi-line transactions that timed
   out before completing — they are still emitted (tagged
   `event.incomplete: true`), this column just makes them visible.
-- **Workers** — one row per worker: PID, its own EPS, events processed, uptime
-  and a green/red alive light.
+- **Workers** — one row per worker: PID, its own EPS, events processed, how
+  many Kafka partitions it owns right now (hover for the list), uptime and a
+  green/red alive light.
 - **Recent errors / DLQ** — click *Load latest* to see the most recent
   un-parseable lines and why they failed, **grouped into one folder per
   source** (`squid`, `nginx`, `postfix`, … — new sources appear
@@ -178,6 +181,28 @@ consumer **group**, and the process **PID(s)**. Below that, live panels:
 > in different places, point the UI at the engine's logs with the `SOC_LOG_DIR`
 > environment variable. Tune how often stats are written with
 > `runtime.metrics_interval_sec` in `config.yaml`.
+
+### Sources — one row per log source
+
+Click **Sources** in the sidebar. Every source has one name end to end (rsyslog
+tag `squid` → Kafka topic `tlsoc.logs.squid` → the rule with `source: "squid"`
+→ index `fosstlsoc-logs-squid-*`), and this page shows each one with:
+
+- its **topic** and number of **partitions**, or *not created yet* for a source
+  a rule knows but no server sends yet;
+- **arriving / s** and **lag** (messages waiting for the engine);
+- **workers · partitions** — which engine worker reads which partitions
+  (`w0 · 0,3`), so you can see several workers sharing a busy source;
+- the **parser** chain, the age of the **last output** written and the size of
+  its dead-letter file;
+- a **status**: OK, WAITING (no data yet), NO PARSER (data arrives but no rule
+  declares this name — write one), BEHIND (more than 100k waiting — add
+  workers), DLQ (recent lines did not match), IDLE (nothing arriving now) or
+  SHARED (an older single topic routed by each line's tag).
+
+It refreshes every 10 seconds and is the same table as `python3 sources.py` on
+the server. A newly onboarded source appears here within `topic_refresh_sec`
+(30 s) of its first line. The Dashboard shows the same sources as coloured chips.
 
 ### Start / stop / restart from the browser (optional)
 

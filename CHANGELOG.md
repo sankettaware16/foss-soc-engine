@@ -34,6 +34,11 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
   BEHIND, DLQ, IDLE).
 - `test_sources.py` (in CI) and a `test_config.py` / `preflight.py` / Web UI
   check that source names are valid and owned by one rule.
+- Web UI **Sources** page: the `sources.py` table live in the browser (refreshes
+  every 10 s), with which worker owns which partitions; the Dashboard shows the
+  sources as status chips and the Monitor's worker table their partitions.
+  Each worker now writes its current Kafka partitions (`assignment`) into its
+  stats file; `sources.py` gained a `WORKERS` column and a reusable `collect()`.
 
 ### Changed
 
@@ -48,6 +53,8 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Web UI Monitor counted the supervisor process as a worker (`Workers 4/3`
+  with three workers).
 - **Index template did not apply to the TLSOC stack's indices.** The template
   matched only `soc-*`, but the stack's Logstash pipeline writes
   `fosstlsoc-logs-<service>-YYYY.MM.dd`, so those indices fell back to dynamic

@@ -37,6 +37,7 @@ import socket
 import hashlib
 import secrets
 import platform
+import threading
 import subprocess
 import contextlib
 
@@ -1092,6 +1093,36 @@ def api_preflight():
     })
 
 
+# ---- Sources (one row per log source; the same data as sources.py) -------- #
+# Cached for a few seconds so several open browsers cost one Kafka round trip.
+# The arrival rate is measured between two successive calls (no sleep).
+_SOURCES = {"at": 0.0, "data": None, "prev": None}
+_SOURCES_LOCK = threading.Lock()
+
+
+@app.route("/api/sources")
+def api_sources():
+    import sources as src
+    with _SOURCES_LOCK:
+        now = time.time()
+        if _SOURCES["data"] is None or now - _SOURCES["at"] >= 5:
+            prev = _SOURCES["prev"]
+            if prev and now - prev.get("t", 0) > 120:
+                prev = None
+            try:
+                data = src.collect(load_config(), DATA_ROOT,
+                                   sample_sec=0 if prev else 1.0,
+                                   use_kafka=KAFKA_LIB_OK, prev=prev, log_dir=LOG_DIR)
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+            _SOURCES["prev"] = data.pop("snapshot")
+            if not KAFKA_LIB_OK:
+                data["kafka_error"] = "kafka-python is not installed"
+            data["input_topic"] = (load_config().get("kafka") or {}).get("input_topic")
+            _SOURCES["data"], _SOURCES["at"] = data, time.time()
+        return jsonify(_SOURCES["data"])
+
+
 # --------------------------------------------------------------------------- #
 # Benchmark  ·  wraps the REAL benchmark.py (same one as the CLI), capturing
 # its stdout — the UI and CLI can never diverge. Three modes:
@@ -1330,6 +1361,7 @@ def sys_metrics():
 def build_monitor():
     runtime = read_json(ENGINE_PID_PATH)
     pids, role, uptime, started_iso, kafka, workers_cfg = [], None, None, None, None, None
+    alive_workers = 0
     if runtime:
         role = runtime.get("role")
         started_iso = runtime.get("started_iso")
@@ -1339,6 +1371,9 @@ def build_monitor():
         if runtime.get("pid"):
             cand.append(runtime["pid"])
         pids = sorted({int(p) for p in cand if _pid_alive(p)})
+        # the supervisor's own pid is in `pids` too, but it is not a worker
+        alive_workers = len({int(p) for p in (runtime.get("worker_pids") or [])
+                             if _pid_alive(p)})
         st = runtime.get("start_time")
         if st:
             uptime = max(0, time.time() - st)
@@ -1422,6 +1457,7 @@ def build_monitor():
             "uptime_sec": w.get("uptime_sec"),
             "total_processed": w.get("total_processed", 0),
             "total_errors": w.get("total_errors", 0),
+            "assignment": w.get("assignment") or {},
             "alive": _pid_alive(wpid) if wpid else None,
             "age": _iso_age(w.get("timestamp")),
         })
@@ -1455,7 +1491,7 @@ def build_monitor():
         "started_iso": started_iso,
         "pids": pids,
         "workers": workers_cfg or len(worker_rows),
-        "workers_alive": len(pids) or (len(worker_stats) if fresh else 0),
+        "workers_alive": alive_workers or (len(worker_stats) if fresh else 0),
         "pid_visible": pid_running,
         "uptime_sec": int(uptime) if uptime is not None else None,
         "kafka": kafka,

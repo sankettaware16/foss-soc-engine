@@ -8,6 +8,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const VIEW_META = {
   dashboard: ["Dashboard", "Live overview of your parsing engine"],
   monitor: ["Monitor", "Real-time engine health, throughput & resource metrics"],
+  sources: ["Sources", "Every log source: its Kafka topic, rate, lag, workers and parser"],
   test: ["Test Log", "Run raw logs through any parser and see the ECS output"],
   rules: ["Rules", "View, edit, create and validate parser rules"],
   config: ["Config", "Edit config.yaml and validate it before going live"],
@@ -64,6 +65,7 @@ function showView(name) {
   if (name === "ipmap") loadIpmap();
   if (name === "test") populateParserSelect();
   if (name === "monitor") startMonitor(); else stopMonitor();
+  if (name === "sources") startSources(); else stopSources();
 }
 document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-view]");
@@ -81,6 +83,7 @@ async function loadHealth() {
     $("#status-dot").className = "status-dot ok";
     $("#status-text").textContent = `${h.rules_count} rules · py ${h.python}`;
     renderHealth(h);
+    loadDashSources();
   } catch (e) {
     $("#status-dot").className = "status-dot bad";
     $("#status-text").textContent = "engine error";
@@ -1158,7 +1161,7 @@ function renderMonitor(m) {
   const meta = [];
   meta.push(`<span>Uptime <b>${fmtDur(m.uptime_sec)}</b></span>`);
   meta.push(`<span>Workers <b>${m.workers_alive}/${m.workers}</b></span>`);
-  if (m.kafka && m.kafka.input_topic) meta.push(`<span>Topic <b>${esc(m.kafka.input_topic)}</b></span>`);
+  if (m.kafka && m.kafka.input_topic) meta.push(`<span>Topics <b>${esc(m.kafka.input_topic)}</b> <a class="help-link" href="#" data-view="sources">per source ↗</a></span>`);
   if (m.kafka && m.kafka.group_id) meta.push(`<span>Group <b>${esc(m.kafka.group_id)}</b></span>`);
   if (m.pids && m.pids.length) meta.push(`<span>PID <b>${m.pids.join(", ")}</b></span>`);
   $("#mon-meta").innerHTML = meta.join("");
@@ -1289,15 +1292,20 @@ function renderRuleTable(ps) {
 function renderWorkerTable(ws) {
   ws = ws || [];
   $("#mon-worker-count").textContent = `(${ws.length})`;
-  const body = ws.map((w) =>
-    `<tr><td>${w.worker_id == null ? "—" : "w" + w.worker_id}</td>
+  const body = ws.map((w) => {
+    const own = Object.entries(w.assignment || {});
+    const nparts = own.reduce((n, [, p]) => n + p.length, 0);
+    const detail = own.map(([t, p]) => `${t}: ${p.join(",")}`).join("\n");
+    return `<tr><td>${w.worker_id == null ? "—" : "w" + w.worker_id}</td>
       <td class="num">${w.pid || "—"}</td>
       <td class="num ok">${fmtNum(w.eps)}</td>
       <td class="num">${fmtNum(w.total_processed)}</td>
+      <td class="num" title="${attr(detail)}">${own.length ? `${nparts} in ${own.length} topics` : "—"}</td>
       <td class="num">${fmtDur(w.uptime_sec)}</td>
-      <td><span class="${w.alive === false ? "dot-dead" : "dot-alive"}"></span></td></tr>`).join("");
+      <td><span class="${w.alive === false ? "dot-dead" : "dot-alive"}"></span></td></tr>`;
+  }).join("");
   $("#mon-workers tbody").innerHTML = body ||
-    '<tr><td colspan="6" class="muted small">No workers reporting.</td></tr>';
+    '<tr><td colspan="7" class="muted small">No workers reporting.</td></tr>';
 }
 
 async function engineControl(act) {
@@ -1397,4 +1405,122 @@ $("#logout-btn").addEventListener("click", async () => {
 /* ---------- boot ---------- */
 loadSession();
 loadHealth();
+/* ============================================================== *
+ *  Sources — one row per log source (GET /api/sources = sources.py)
+ * ============================================================== */
+const SRC_STATUS = {
+  OK: ["good", "Lines are arriving and being parsed."],
+  WAITING: ["idle", "Ready, but no line has arrived yet. On the sending server check rsyslog and port 9094."],
+  "NO PARSER": ["bad", "Lines arrive but no rule declares this source name. They wait in logs/dlq/<source>.json - write rules/<source>.yaml."],
+  BEHIND: ["bad", "More than 100,000 messages are waiting. Raise runtime.workers (and the topic's partitions)."],
+  DLQ: ["warn", "Recent lines did not match the rule. Look at logs/dlq/<source>.json and extend the rule."],
+  IDLE: ["idle", "Had data before; nothing is arriving right now."],
+  SHARED: ["warn", "An older shared topic; its lines are routed by their own tag (program_mapping)."],
+};
+let SRC_TIMER = null;
+
+function startSources() {
+  pollSources();
+  if (SRC_TIMER) clearInterval(SRC_TIMER);
+  SRC_TIMER = setInterval(() => { if ($("#src-auto").checked) pollSources(); }, 10000);
+}
+function stopSources() {
+  if (SRC_TIMER) { clearInterval(SRC_TIMER); SRC_TIMER = null; }
+}
+$("#src-refresh").addEventListener("click", pollSources);
+
+function fmtAge(sec) {
+  if (sec == null) return "—";
+  if (sec < 90) return `${Math.round(sec)}s ago`;
+  if (sec < 5400) return `${Math.round(sec / 60)}m ago`;
+  if (sec < 172800) return `${Math.round(sec / 3600)}h ago`;
+  return `${Math.round(sec / 86400)}d ago`;
+}
+function srcBadge(st) {
+  const [cls, tip] = SRC_STATUS[st] || ["idle", ""];
+  return `<span class="sbadge ${cls}" title="${attr(tip)}">${esc(st)}</span>`;
+}
+function srcTotals(d) {
+  const rows = d.sources || [];
+  const flowing = rows.filter((r) => r.status === "OK" || r.status === "DLQ").length;
+  const topics = rows.filter((r) => r.topic).length;
+  const lag = rows.reduce((n, r) => n + (r.lag || 0), 0);
+  const rate = rows.some((r) => r.rate != null) ? rows.reduce((n, r) => n + (r.rate || 0), 0) : null;
+  const problems = rows.filter((r) => r.status === "NO PARSER" || r.status === "BEHIND").length;
+  return { rows, flowing, topics, lag, rate, problems };
+}
+
+async function pollSources() {
+  try {
+    renderSources(await api("/api/sources"));
+  } catch (e) {
+    $("#src-note").innerHTML = `<span class="er">Could not read sources: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderSources(d) {
+  const t = srcTotals(d);
+  const cards = [
+    { v: `${t.flowing}`, k: "Sources flowing", cls: t.flowing ? "good" : "" },
+    { v: t.topics, k: "Kafka topics", cls: "acc" },
+    { v: d.workers || "—", k: "Engine workers", cls: "" },
+    { v: t.rate == null ? "—" : fmtNum(Math.round(t.rate)), k: "Arriving / sec", cls: "" },
+    { v: fmtNum(t.lag), k: "Waiting (lag)", cls: t.lag > 100000 ? "warn" : "" },
+    { v: t.problems, k: "Need attention", cls: t.problems ? "bad" : "good" },
+  ];
+  $("#src-stats").innerHTML = cards.map((c) =>
+    `<div class="stat ${c.cls}"><div class="v">${c.v}</div><div class="k">${c.k}</div></div>`).join("");
+  $("#src-count").textContent = `(${t.rows.length})`;
+
+  const note = [];
+  if (d.kafka_error) note.push(`<span class="er">Kafka not reachable (${esc(d.kafka_error)}) — showing rules and files only.</span>`);
+  if (d.input_topic) note.push(`The engine reads every topic matching <code>${esc(d.input_topic)}</code>.`);
+  if (!d.workers) note.push("The engine is not running (no fresh heartbeat), so no workers are shown.");
+  $("#src-note").innerHTML = note.join(" ");
+
+  $("#src-table tbody").innerHTML = t.rows.map((r) => {
+    const workers = Object.entries(r.workers || {}).sort()
+      .map(([w, p]) => `<span class="wchip">${esc(w)} · ${p.join(",")}</span>`).join("") || "—";
+    return `<tr>
+      <td class="rname">${esc(r.source)}</td>
+      <td>${srcBadge(r.status)}</td>
+      <td>${r.topic ? `<code>${esc(r.topic)}</code>` : '<span class="muted small">not created yet</span>'}</td>
+      <td class="num">${r.partitions == null ? "—" : r.partitions}</td>
+      <td class="num ${r.rate ? "ok" : ""}">${r.rate == null ? "—" : fmtNum(Math.round(r.rate))}</td>
+      <td class="num ${r.lag > 100000 ? "er" : ""}">${r.lag == null ? "—" : fmtNum(r.lag)}</td>
+      <td>${workers}</td>
+      <td>${r.parser ? esc(r.parser) : '<span class="er">no parser</span>'}</td>
+      <td class="num">${fmtAge(r.output_age)}</td>
+      <td class="num">${r.dlq_bytes ? fmtBytes(r.dlq_bytes) : "—"}</td></tr>`;
+  }).join("") || '<tr><td colspan="10" class="muted small">No sources: no topic matches input_topic and no rule declares a source.</td></tr>';
+
+  $("#src-legend").innerHTML = Object.entries(SRC_STATUS).map(([k, [cls, tip]]) =>
+    `<div class="cap"><span>${esc(tip)}</span><span class="sbadge ${cls}">${esc(k)}</span></div>`).join("");
+  $("#src-updated").textContent = "updated " + new Date().toLocaleTimeString();
+}
+
+async function loadDashSources() {
+  try {
+    const d = await api("/api/sources");
+    const t = srcTotals(d);
+    const live = t.rows.filter((r) => r.status !== "WAITING");
+    const waiting = t.rows.length - live.length;
+    $("#dash-src-count").textContent = `(${t.flowing} flowing)`;
+    $("#dash-sources").innerHTML = live.map((r) => {
+      const [cls, tip] = SRC_STATUS[r.status] || ["idle", ""];
+      const rate = r.rate == null ? "" : `<span class="tag">${fmtNum(Math.round(r.rate))}/s</span>`;
+      return `<span class="chip" title="${attr(r.status + " — " + tip)}"><span class="sdot ${cls}"></span>${esc(r.source)}${rate}</span>`;
+    }).join("") || '<span class="muted small">No data has arrived from any source yet.</span>';
+    const note = [];
+    if (d.kafka_error) note.push("Kafka not reachable.");
+    if (t.topics) note.push(`${t.topics} Kafka topics`);
+    if (d.workers) note.push(`${d.workers} engine worker${d.workers > 1 ? "s" : ""}`);
+    note.push(`${fmtNum(t.lag)} messages waiting`);
+    if (waiting) note.push(`${waiting} more ready and waiting for data`);
+    $("#dash-src-note").textContent = note.join(" · ");
+  } catch (e) {
+    $("#dash-sources").innerHTML = `<span class="muted small">Sources unavailable: ${esc(e.message)}</span>`;
+  }
+}
+
 showView("dashboard");

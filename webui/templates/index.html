@@ -45,6 +45,8 @@
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg></span>Dashboard</button>
         <button class="nav-item" data-view="monitor">
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5 7 5-15L17 12h4"/></svg></span>Monitor<span class="live-dot" id="nav-live-dot"></span></button>
+        <button class="nav-item" data-view="sources">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg></span>Sources</button>
         <button class="nav-item" data-view="test">
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.1 12.9a1 1 0 0 0 .8 1.6H11l-1 7.5 9-11a1 1 0 0 0-.8-1.6H12z"/></svg></span>Test Log</button>
         <button class="nav-item" data-view="rules">
@@ -103,6 +105,14 @@
             </p>
           </div>
         </div>
+        <div class="glass card">
+          <div class="row between wrap">
+            <h3 class="card-h">Log sources <span class="count" id="dash-src-count"></span></h3>
+            <a class="help-link" href="#" data-view="sources">Details ↗</a>
+          </div>
+          <div id="dash-sources" class="rule-chips"><span class="muted small">Reading Kafka…</span></div>
+          <p class="muted small" id="dash-src-note" style="margin-top:12px"></p>
+        </div>
         <div class="glass card" id="dash-errors-card" style="display:none">
           <h3 class="card-h warn">Rule load errors</h3>
           <div id="dash-errors" class="loglist"></div>
@@ -156,7 +166,7 @@
           <div class="glass card">
             <h3 class="card-h">Workers <span class="count" id="mon-worker-count"></span></h3>
             <div class="tbl-wrap"><table class="tbl" id="mon-workers">
-              <thead><tr><th>#</th><th>PID</th><th>EPS</th><th>Processed</th><th>Uptime</th><th></th></tr></thead>
+              <thead><tr><th>#</th><th>PID</th><th>EPS</th><th>Processed</th><th>Partitions</th><th>Uptime</th><th></th></tr></thead>
               <tbody></tbody></table></div>
           </div>
         </div>
@@ -167,6 +177,30 @@
             <button id="mon-dlq-load" class="btn ghost small">Load latest</button>
           </div>
           <div id="mon-dlq" class="loglist"></div>
+        </div>
+      </section>
+
+      <!-- ============ SOURCES (one row per log source) ============ -->
+      <section class="view" id="view-sources">
+        <div class="grid stat-grid" id="src-stats"></div>
+        <div class="glass card">
+          <div class="row between wrap">
+            <h3 class="card-h">Log sources <span class="count" id="src-count"></span></h3>
+            <div class="row gap">
+              <label class="check"><input type="checkbox" id="src-auto" checked /> live</label>
+              <span class="muted small" id="src-updated"></span>
+              <button id="src-refresh" class="btn ghost small">⟳</button>
+            </div>
+          </div>
+          <p class="muted small" id="src-note"></p>
+          <div class="tbl-wrap src-wrap"><table class="tbl" id="src-table">
+            <thead><tr><th>Source</th><th>Status</th><th>Kafka topic</th><th>Partitions</th><th>Arriving&nbsp;/s</th><th>Lag</th><th>Workers · partitions</th><th>Parser</th><th>Last output</th><th>DLQ</th></tr></thead>
+            <tbody></tbody></table></div>
+        </div>
+        <div class="glass card">
+          <h3 class="card-h">How a source connects</h3>
+          <p class="muted small">Every source has one name: rsyslog tag <code>squid</code> → Kafka topic <code>tlsoc.logs.squid</code> → the rule with <code>source: "squid"</code> → index <code>fosstlsoc-logs-squid-*</code>. A new source's topic is created on its first line and picked up here within <code>topic_refresh_sec</code> (30&nbsp;s).</p>
+          <div class="caps" id="src-legend"></div>
         </div>
       </section>
 
@@ -475,6 +509,7 @@ Click “Insert example” to start from a filled-in template."></textarea>
         <div class="glass card help-card">
           <h3 class="card-h">Using the console</h3>
           <ol class="help-steps">
+            <li><b>Sources</b> — one row per log source: its Kafka topic, how fast lines arrive, how many wait (lag), which engine workers read it, which parser handles it and whether output is being written. The same table as <code>python3 sources.py</code>.</li>
             <li><b>Test Log</b> — paste log lines or upload a file, pick a parser (or <code>AUTO</code> to let the engine find the right one), and Run. You get the parsed ECS JSON plus a parsed / no-match summary.</li>
             <li><b>Rules</b> — click a rule to view/edit its YAML. Use a <b>template</b> to start a new parser, <b>Check ECS fields</b> to validate field names, then <b>Save</b>.</li>
             <li><b>Config</b> — edit <code>config.yaml</code> and <b>Validate</b> it (same checks as the CLI validator) before going live.</li>
@@ -483,7 +518,7 @@ Click “Insert example” to start from a filled-in template."></textarea>
             <li><b>Preflight</b> — when you are ready to connect Kafka/Redis, run the live readiness check.</li>
             <li><b>Benchmark</b> — measure what this machine can parse (EPS + latency + utilization&nbsp;%), check whether the live pipeline is real-time, or reconstruct how it performed during a past traffic spike.</li>
           </ol>
-          <p class="muted small">Full written guide: <code>WEB_UI_GUIDE.md</code> in the application folder.</p>
+          <p class="muted small">Full written guide: <code>docs/web-ui-guide.md</code> in the application folder.</p>
         </div>
       </section>
     </main>

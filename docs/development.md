@@ -104,12 +104,17 @@ python3 sources.py --no-kafka   # rules and files only
 ```
 
 ```
-SOURCE   STATUS    TOPIC              PART  RATE/s   LAG  PARSER                        OUTPUT  DLQ
-auth     OK        tlsoc.logs.auth       3      12     0  linux_auth                       2s    -
-moodle   NO PARSER tlsoc.logs.moodle     3       4     0  NO PARSER                         -   6.4K
-nginx    OK        tlsoc.logs.nginx      3     310     0  nginx_access > apache_access     1s    -
-squid    WAITING   tlsoc.logs.squid      6       -     -  squid_proxy_access                -    -
+SOURCE   STATUS    TOPIC              PART  RATE/s   LAG  WORKERS   PARSER                        OUTPUT  DLQ
+auth     OK        tlsoc.logs.auth       3      12     0  w0,w1,w2  linux_auth                       2s    -
+moodle   NO PARSER tlsoc.logs.moodle     3       4     0  w0,w1,w2  NO PARSER                         -   6.4K
+nginx    OK        tlsoc.logs.nginx      3     310     0  w0,w1,w2  nginx_access > apache_access     1s    -
+squid    WAITING   tlsoc.logs.squid      6       -     -  w0,w1,w2  squid_proxy_access                -    -
 ```
+
+`WORKERS` lists the engine workers that own partitions of the topic (each
+worker records its partitions in `logs/stats[.wN].json`). The Web UI's
+**Sources** page shows the same data (it calls `sources.collect()`), with the
+partitions per worker.
 
 `STATUS`: **OK**; **WAITING** (no data yet); **NO PARSER** (data arrives, no rule
 declares this source — its lines are kept in `logs/dlq/<source>.json`; write a
