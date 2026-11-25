@@ -1,0 +1,22 @@
+# Monthly, grouped update PRs; each one runs the full CI before anyone merges
+# it. Major versions of Python packages are left for a deliberate upgrade.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directories: ["/", "/webui"]
+    schedule:
+      interval: monthly
+    groups:
+      python:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

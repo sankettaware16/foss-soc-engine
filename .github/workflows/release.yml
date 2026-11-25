@@ -1,0 +1,78 @@
+# Release: pushing a version tag publishes a GitHub release.
+#
+#   1. In CHANGELOG.md, rename "## [Unreleased]" to "## [1.2.0] - 2026-12-01"
+#      and add a fresh empty "## [Unreleased]" above it; commit to main.
+#   2. git tag -a v1.2.0 -m "v1.2.0" && git push origin v1.2.0
+#
+# The workflow re-runs every check on the tagged commit, refuses to publish if
+# CHANGELOG.md has no section for the version, and attaches:
+#   foss-soc-engine-v1.2.0.tar.gz      the source tree at the tag
+#   tlsoc-rules-v1.2.0.tar.gz          rules/ only, for sites that pin rules
+#   soc-index-template-v1.2.0.json     the Elasticsearch template for these rules
+#   SHA256SUMS
+# A tag with a suffix (v1.2.0-rc1) is published as a pre-release.
+# Deployments are not touched: sites upgrade with docs/upgrading.md.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            webui/requirements-ui.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r webui/requirements-ui.txt
+
+      - name: All checks
+        run: python test_all.py
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v head="## [$VERSION]" '
+            index($0, head) == 1 { found = 1; next }
+            found && /^## \[/    { exit }
+            found                { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section (or it is empty). Move the [Unreleased] entries under it and tag again."
+            exit 1
+          fi
+
+      - name: Build release files
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          mkdir dist
+          git archive --format=tar.gz --prefix="foss-soc-engine-$TAG/" \
+            -o "dist/foss-soc-engine-$TAG.tar.gz" "$TAG"
+          git archive --format=tar.gz --prefix="tlsoc-rules-$TAG/" \
+            -o "dist/tlsoc-rules-$TAG.tar.gz" "$TAG" rules
+          cp elasticsearch/soc-index-template.json "dist/soc-index-template-$TAG.json"
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          PRERELEASE=""
+          case "$TAG" in *-*) PRERELEASE="--prerelease" ;; esac
+          gh release create "$TAG" dist/* --verify-tag $PRERELEASE \
+            --title "TLSOC Engine $TAG" --notes-file release-notes.md

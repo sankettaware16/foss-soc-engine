@@ -1,0 +1,64 @@
+name: Parser request
+description: Ask for a parser for a log source that has none yet, or report one that misses lines
+title: "[Parser]: "
+labels: ["parser"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Want to write the parser yourself? Great - follow
+        [CONTRIBUTING.md](https://github.com/sankettaware16/foss-soc-engine/blob/main/CONTRIBUTING.md#add-a-new-parser) and open a PR
+        directly; this form is for when you have the logs but not the time.
+
+        **Sanitize every line you paste**: replace real IPs with `192.0.2.x`,
+        `198.51.100.x`, `203.0.113.x`; MACs with `00:00:5e:00:53:xx`; users,
+        hostnames, domains and serial numbers with `example` placeholders.
+        Keep the layout of each line exactly as it is.
+  - type: input
+    id: product
+    attributes:
+      label: Product and version
+      placeholder: FortiGate, FortiOS 7.4.3
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Request
+      options:
+        - New parser for a source with none
+        - Existing parser misses some lines (they land in the DLQ)
+        - Existing parser maps a field wrongly
+    validations:
+      required: true
+  - type: input
+    id: rule
+    attributes:
+      label: Existing rule, if any
+      placeholder: rules/nginx.yaml
+  - type: input
+    id: transport
+    attributes:
+      label: How the logs arrive
+      description: rsyslog tag / file name, Siphon, other shipper; plain text, JSON, XML, key=value
+      placeholder: rsyslog from /var/log/fortigate.log, key=value syslog
+    validations:
+      required: true
+  - type: textarea
+    id: samples
+    attributes:
+      label: Sanitized sample lines
+      description: 5-20 lines covering every log type you see, one per line. `logs/dlq/<source>.json` on your engine has the lines no rule matched.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: fields
+    attributes:
+      label: Fields that matter
+      description: Which values you need to search, alert or report on (e.g. source IP, user, action, rule name).
+  - type: input
+    id: volume
+    attributes:
+      label: Rough volume
+      placeholder: about 1,000 events/s at peak
