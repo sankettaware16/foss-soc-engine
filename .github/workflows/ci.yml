@@ -1,39 +1,72 @@
-# CI: every push / pull request must pass the full validation + regression
-# suite. This is what makes rule contributions safe to accept: if a change
-# to any rule alters any golden-sample answer, the build fails with a diff.
+# CI: every push and pull request runs every check in test_all.py on the
+# supported Python versions, plus a lint for real errors. This is what makes
+# parser contributions safe to accept:
+#   - a rule change that alters any golden-sample answer fails with a diff
+#   - a new rule without a golden sample, or a sample with real-looking data
+#     (public IPs, MACs, e-mail addresses), fails
+#   - a rule change without the regenerated Elasticsearch template fails
+#
+# Run the same checks locally before pushing:  python3 test_all.py
+# To add a check, see the docstring of test_all.py - this file needs no change.
 name: ci
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+# Fork PRs get a read-only token; nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A new push to the same branch / PR cancels the run still in progress.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  checks:
+    name: checks (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            webui/requirements-ui.txt
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install dependencies (engine + Web UI)
+        run: pip install -r requirements.txt -r webui/requirements-ui.txt
 
-      - name: Static config + rules + ECS validation
-        run: python test_config.py --skip-kafka
+      # One step on purpose: test_all.py prints each check in its own
+      # collapsible group, annotates failures with the fix, and writes a
+      # summary table to the run page.
+      - name: All checks (python test_all.py)
+        run: python test_all.py
 
-      - name: Timestamp regression suite (49 cases)
-        run: python test_timestamps.py
+  lint:
+    name: lint (syntax errors, undefined names)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: GeoIP/ASN enrichment suite (real-DB cases auto-skip)
-        run: python test_enrichment.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Golden samples — one exam per rule
-        run: python test_golden.py
-
-      - name: Source names and topic routing
-        run: python test_sources.py
+      # Only errors that break code at runtime - no style rules, so a
+      # contributor is never blocked on formatting.
+      - name: ruff (E9, F63, F7, F82)
+        run: |
+          pip install ruff==0.14.3
+          ruff check --select E9,F63,F7,F82 --output-format github .

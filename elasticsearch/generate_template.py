@@ -15,6 +15,10 @@ Regenerate after adding or changing rules:
     python elasticsearch/generate_template.py
 The script REFUSES to write if two rules disagree about a field's shape
 (scalar vs object) — fix the rule, don't hand-edit the JSON.
+
+CI runs `python elasticsearch/generate_template.py --check`: it writes
+nothing and fails if the committed JSON is not what the rules generate, so a
+rule change cannot ship without its template update.
 """
 import json
 import os
@@ -252,11 +256,50 @@ def main():
             "field_count": len(fields),
         },
     }
+    text = json.dumps(template, indent=2, sort_keys=True) + "\n"
+
+    if "--check" in sys.argv:
+        try:
+            with open(OUT_PATH, encoding="utf-8") as f:
+                current = f.read()
+        except FileNotFoundError:
+            current = ""
+        if current == text:
+            print(f"OK: {os.path.relpath(OUT_PATH, ROOT)} is up to date "
+                  f"({len(fields)} fields)")
+            return 0
+        old = set(collect_paths(json.loads(current))) if current else set()
+        new = set(collect_paths(template))
+        print(f"FAIL: {os.path.relpath(OUT_PATH, ROOT)} is out of date with "
+              f"rules/ - regenerate it and commit the result:")
+        print("    python elasticsearch/generate_template.py")
+        for p in sorted(new - old):
+            print(f"  + {p}")
+        for p in sorted(old - new):
+            print(f"  - {p}")
+        return 1
+
     with open(OUT_PATH, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(template, f, indent=2, sort_keys=True)
-        f.write("\n")
+        f.write(text)
     print(f"wrote {OUT_PATH} ({len(fields)} fields)")
     return 0
+
+
+def collect_paths(template):
+    """Dotted field paths (with their type) of a template, for --check."""
+    out = []
+
+    def walk(props, prefix):
+        for name, spec in props.items():
+            path = prefix + name
+            if "properties" in spec:
+                walk(spec["properties"], path + ".")
+            else:
+                out.append(f"{path} ({spec.get('type', 'object')})")
+
+    walk(template.get("template", {}).get("mappings", {})
+         .get("properties", {}), "")
+    return out
 
 
 if __name__ == "__main__":
