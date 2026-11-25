@@ -66,3 +66,8 @@ hints, static keys) plus the engine-added fields, and **refuses to write**
 if two rules disagree about a field's shape (scalar vs object) — fix the
 rule instead. New custom fields default to `keyword`; add an entry to
 `TYPE_OVERRIDES` in the generator if a field needs a specific type.
+
+CI runs `python elasticsearch/generate_template.py --check`, which writes
+nothing and fails (listing the added/removed fields) when the committed JSON is
+not what the rules generate — so commit the regenerated template together with
+the rule change.

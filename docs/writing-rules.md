@@ -29,6 +29,10 @@ Python to add a parser — you just add a YAML file.
 That's it. The same `ecs_helper.py` is also run automatically by the deploy
 validator (`python3 test_config.py`), so a rule with bad field names cannot ship.
 
+**Sharing the rule with everyone** (a pull request) also needs a golden sample
+(§7) and the regenerated index template — the step-by-step is in
+[CONTRIBUTING.md → Add a new parser](../CONTRIBUTING.md#add-a-new-parser).
+
 ---
 
 ## 2. The helper (your ECS autocorrect)
@@ -343,8 +347,9 @@ python3 ecs_helper.py check rules/myapp.yaml
 Each rule has a tiny corpus under `tests/samples/<pattern_name>/`:
 
 ```
-tests/samples/myapp_access/input.log        <- 5-20 real raw log lines
+tests/samples/myapp_access/input.log        <- 5-20 real-format, SANITIZED raw log lines
 tests/samples/myapp_access/expected.ndjson  <- exactly what the engine must produce
+tests/samples/myapp_access/allow.txt        <- optional: harmless public values (see below)
 ```
 
 Workflow when you add or change a rule:
@@ -355,13 +360,25 @@ Workflow when you add or change a rule:
 python3 test_golden.py --update myapp_access
 # 3. from now on, every change is checked automatically:
 python3 test_golden.py                     # all rules; exits non-zero + diff on any change
+# 4. new or renamed fields: regenerate the Elasticsearch template
+python3 elasticsearch/generate_template.py
+# 5. everything CI runs:
+python3 test_all.py
 ```
 
-CI runs `test_golden.py` on every push/PR, so an edit that silently changes any
+CI runs all of this on every push/PR, so an edit that silently changes any
 rule's output for any sample line is rejected with a diff. That is what makes it
 safe to accept rule contributions. (Timestamps and geo/ASN fields are normalized
 out — they're covered by `test_timestamps.py` / `test_enrichment.py`; stateful
 rules work in the exam via a built-in in-memory Redis stand-in.)
+
+CI also fails when a rule has no sample folder, or when `input.log` contains a
+real-looking public IP (use `192.0.2.x`, `198.51.100.x`, `203.0.113.x`), MAC
+address (use `00:00:5e:00:53:xx`) or e-mail address (use `@example.com`). A
+value that is really harmless — a public DNS resolver, a vendor's documented
+example address — goes into `allow.txt`, one per line with a `#` comment. The
+full contributor path (new parser, updating a parser, opening the PR) is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#add-a-new-parser).
 
 ## 8. Hook your log source to the rule
 

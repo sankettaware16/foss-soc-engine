@@ -227,7 +227,9 @@ clock or timezone label is wrong — fix the source, not the engine.
 ├── preflight.py          # Pre-run validator (config + live infrastructure)
 ├── replicate.py          # Local dry-run of the rsyslog→Kafka→engine pipeline
 ├── sources.py            # Per-source status: topic, rate, lag, parser, dead letters
-├── test_*.py             # Regression battery (config, timestamps, enrichment, golden)
+├── test_all.py           # Runs every check CI runs (python3 test_all.py)
+├── test_*.py             # The checks: config, samples, golden, timestamps, sources, Web UI, ...
+├── .github/              # CI, release workflow, issue/PR templates, Dependabot
 └── docs/                 # Documentation (see below)
 ```
 
@@ -268,8 +270,14 @@ Highlights — full list in [docs/roadmap.md](docs/roadmap.md):
 ## Contributing
 
 Parser rules, bug fixes, documentation, and features are all welcome — see
-[CONTRIBUTING.md](CONTRIBUTING.md). Every rule change is guarded by CI's
-golden-sample exam, which makes contributions safe to accept.
+[CONTRIBUTING.md](CONTRIBUTING.md), which walks through
+[adding a new parser](CONTRIBUTING.md#add-a-new-parser) and
+[updating an existing one](CONTRIBUTING.md#update-an-existing-parser) step by
+step. `python3 test_all.py` runs locally exactly what CI runs on every pull
+request: each rule's golden-sample exam, a check that samples hold no real
+data, the Elasticsearch template, timestamps, routing and the Web UI. Have logs
+but no time to write the parser? Open a
+[parser request](https://github.com/sankettaware16/foss-soc-engine/issues/new?template=parser_request.yml).
 
 Please note our [Code of Conduct](CODE_OF_CONDUCT.md).
 

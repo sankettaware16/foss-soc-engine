@@ -164,29 +164,55 @@ python3 ecs_helper.py                           # interactive lookup
 
 ## The regression battery (CI)
 
-CI ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) runs all of these on
-every push and pull request, on Python 3.10 and 3.12:
+One command runs every check, in a few seconds, with no Kafka, Redis or
+Elasticsearch:
 
-| Suite | Proves |
-|---|---|
-| `test_config.py --skip-kafka` | config + rules + ECS validation + ReDoS lint |
-| `test_timestamps.py` | every rule's `timestamp:` block parses its format, normalizes to UTC, and unparseable times fall back **visibly** (`ingest_fallback`) — 49 cases |
-| `test_enrichment.py` | GeoIP + ASN enrichment plumbing, real-database lookups (auto-skip if the mmdb files are absent), and that `geoip.enabled: false` really disables both |
-| `test_golden.py` | every rule's **golden-sample exam** (`tests/samples/<rule>/input.log` vs `expected.ndjson`): any rule edit that changes any answer fails with a diff |
-| `test_sources.py` | source names and topic routing: every rule's `source:`/`aliases:`/`fallback:`, `program_mapping` still winning, name conflicts, plain lines and unknown tags routed by their `tlsoc.logs.<source>` topic, the old shared-topic behaviour unchanged, and that a newly created small topic is read from its first message while a big never-read topic is not replayed |
+```bash
+python3 test_all.py                    # everything CI runs
+python3 test_all.py golden template    # only some checks (keys below)
+```
+
+CI ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) runs the same
+`test_all.py` on every push and pull request, on Python 3.10, 3.12 and 3.13,
+plus a `ruff` lint for syntax errors and undefined names. The run page shows a
+table of results and every failure is annotated with its usual fix.
+
+| Key | Script | Proves |
+|---|---|---|
+| `config` | `test_config.py --skip-kafka` | config + rules + ECS validation + ReDoS lint + source-name ownership |
+| `samples` | `test_samples.py` | every rule has a golden sample, every sample folder has a rule, and no `input.log` holds real-looking public IPs, MAC or e-mail addresses (harmless values go in the sample's `allow.txt`) or more than 200 lines |
+| `golden` | `test_golden.py` | every rule's **golden-sample exam** (`tests/samples/<rule>/input.log` vs `expected.ndjson`): any rule edit that changes any answer fails with a diff |
+| `template` | `elasticsearch/generate_template.py --check` | the committed Elasticsearch index template is exactly what the rules generate |
+| `timestamps` | `test_timestamps.py` | every rule's `timestamp:` block parses its format, normalizes to UTC, and unparseable times fall back **visibly** (`ingest_fallback`) — 49 cases |
+| `sources` | `test_sources.py` | source names and topic routing: every rule's `source:`/`aliases:`/`fallback:`, `program_mapping` still winning, name conflicts, plain lines and unknown tags routed by their `tlsoc.logs.<source>` topic, the old shared-topic behaviour unchanged, and that a newly created small topic is read from its first message while a big never-read topic is not replayed |
+| `skew` | `test_skew.py` | future-timestamp detection and correction (quantum offsets, `alt:` arbitration, backfill mode) |
+| `enrichment` | `test_enrichment.py` | GeoIP + ASN enrichment plumbing, real-database lookups (auto-skip if the mmdb files are absent), and that `geoip.enabled: false` really disables both |
+| `internal_map` | `test_internal_map.py` | internal IP map range syntax, overlap rules and engine enrichment |
+| `webui` | `test_webui.py` | the Web UI starts, refuses API calls without a login, logs in, lists every rule without load errors and runs the rule tester on every golden sample (needs `webui/requirements-ui.txt`; skipped locally without Flask, never in CI) |
 
 This is what makes rule contributions safe to accept: if a change to any rule
 alters any golden-sample answer, the build fails with a diff. Refresh a golden
 sample intentionally with `python3 test_golden.py --update <rule>` and review the
 diff.
 
+**Adding a check:** write `test_<name>.py` (standalone, exit non-zero on
+failure), add it to `CHECKS` in `test_all.py` and a row to this table. The
+workflow file needs no change.
+
+**Releases:** pushing a `vX.Y.Z` tag runs
+[.github/workflows/release.yml](../.github/workflows/release.yml): all checks
+again, then a GitHub release with the `CHANGELOG.md` section, source and
+rules-only archives, the index template and `SHA256SUMS`. Steps in
+[CONTRIBUTING.md](../CONTRIBUTING.md#releases).
+
 ## Contributing workflow
 
-1. Open an issue (bug or feature) before larger changes.
-2. Branch from the default branch; keep changes focused.
-3. For rule changes: run `ecs_helper.py check`, add/refresh the golden sample,
-   and run the full battery locally.
+1. Open an issue (bug, feature or parser request) before larger changes.
+2. Branch from `main`; keep changes focused.
+3. For rule changes: `ecs_helper.py check`, add/refresh the golden sample,
+   regenerate the index template, run `python3 test_all.py`.
 4. Open a PR using the template — CI must pass.
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full guide, and
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full step-by-step guide (new
+parser, updating a parser, fixing a failed check, changing the pipeline), and
 [writing-rules.md](writing-rules.md) for rule authoring.

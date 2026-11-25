@@ -39,6 +39,24 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
   sources as status chips and the Monitor's worker table their partitions.
   Each worker now writes its current Kafka partitions (`assignment`) into its
   stats file; `sources.py` gained a `WORKERS` column and a reusable `collect()`.
+- **Contributor pipeline.** `test_all.py` runs every check CI runs with one
+  command and prints the usual fix for each failure. New checks in it and in CI:
+  `test_samples.py` (every rule has a golden sample, every sample folder has a
+  rule, samples hold no real-looking public IPs, MACs or e-mail addresses —
+  harmless values go in the sample's `allow.txt`), `generate_template.py
+  --check` (the committed index template matches the rules), `test_webui.py`
+  (Web UI login, pages and rule tester), and the previously unrun
+  `test_skew.py` and `test_internal_map.py`.
+- CI: Python 3.10 / 3.12 / 3.13, read-only token, superseded runs cancelled,
+  pip cache, results table on the run page, `ruff` lint job for syntax errors
+  and undefined names.
+- Release workflow: a `vX.Y.Z` tag re-runs all checks and publishes a GitHub
+  release with its `CHANGELOG.md` section, source and rules-only archives, the
+  index template and `SHA256SUMS`.
+- Dependabot (monthly, grouped), CODEOWNERS, a "Parser request" issue form, a
+  PR template with a parser checklist, `rules/README.md`, and a step-by-step
+  CONTRIBUTING.md for adding and updating parsers, fixing failed checks,
+  changing the pipeline, reviewing and releasing.
 
 ### Changed
 
@@ -53,6 +71,9 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Golden samples `nginx_access`, `radius` and `squid_proxy_access` used
+  real-looking public IPs, host names and MAC addresses; replaced with
+  documentation values (only those values changed in `expected.ndjson`).
 - Web UI Monitor counted the supervisor process as a worker (`Workers 4/3`
   with three workers).
 - Sources page and `sources.py` list only sources that have a topic or data.
