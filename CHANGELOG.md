@@ -71,6 +71,14 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **FIM parser (`rules/fim.yaml`) reads the current watcher output.** Events
+  now carry the watcher's own time (`@timestamp`, was ingest time), the host
+  the file changed on (`host.name`) and `rule.name`; a removed file no longer
+  gets empty `file.owner` / `file.uid` / `file.mode`; `event.type` follows the
+  action (`creation` for ADDED/created, `deletion` for REMOVED/deleted,
+  `change` otherwise; was always `change`); `file.uid` is always a string.
+  Key order does not matter; older-format lines still parse. Source name
+  `fim`, topic and index are unchanged.
 - Golden samples `nginx_access`, `radius` and `squid_proxy_access` used
   real-looking public IPs, host names and MAC addresses; replaced with
   documentation values (only those values changed in `expected.ndjson`).

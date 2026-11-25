@@ -1,2 +1,8 @@
 {"action":"modified","file_path":"/etc/passwd","owner":"root","owner_uid":0,"mode":"0644"}
 {"action":"created","file_path":"/var/www/html/shell.php","owner":"www-data","owner_uid":33,"mode":"0755"}
+{"@timestamp":"2026-11-06T15:29:37+05:30","host":"mail.example.edu","action":"ADDED","file_path":"/etc/cron.d/update.py","rule":"RealTime","owner":"root","owner_uid":"0","mode":"644"}
+{"@timestamp":"2026-11-06T22:51:19+05:30","host":"mail.example.edu","action":"REMOVED","file_path":"/etc/letsencrypt/.certbot.lock","rule":"RealTime","owner":"","owner_uid":"","mode":""}
+{"@timestamp":"2026-11-11T04:38:59+05:30","host":"mail.example.edu","action":"MODIFIED","file_path":"/root/.bash_history","rule":"RealTime","owner":"root","owner_uid":"0","mode":"600"}
+{"mode":"640","owner_uid":"0","owner":"root","rule":"RealTime","file_path":"/etc/shadow","action":"MODIFIED","host":"web1.example.edu","@timestamp":"2026-11-12T09:15:02Z"}
+{"@timestamp":"2026-11-12T09:16:40+05:30","host":"web1.example.edu","action":"ATTRIB","file_path":"/var/www/html/upload dir/index.php","rule":"RealTime","owner":"www-data","owner_uid":"33","mode":"755"}
+{"@timestamp":"2026-11-12T09:20:00+05:30","host":"web1.example.edu","status":"watcher started"}

@@ -1,30 +1,70 @@
 pattern_name: "fim"
 source: "fim"            # topic tlsoc.logs.fim, index fosstlsoc-logs-fim-*
 
-strategy: "json_map"
+strategy: "multi_match"
 
-# The FIM JSON currently carries NO time field, so events keep ingest time
-# (tagged event.timestamp_source: ingest_fallback). If the agent adds one,
-# declare it like:
-# timestamp:
-#   field: "@timestamp"      # dot-path into the raw JSON
-#   format: iso8601
+# File-integrity monitoring from a real-time (inotify-style) file watcher that
+# writes one JSON object per change:
+#   {"@timestamp":"2026-11-06T15:29:37+05:30","host":"mail.example.edu",
+#    "action":"ADDED","file_path":"/etc/app.py","rule":"RealTime",
+#    "owner":"root","owner_uid":"0","mode":"644"}
+# action is ADDED / REMOVED / MODIFIED. A removed file has empty owner,
+# owner_uid and mode; those fields are left out of the event instead of being
+# indexed as "". Older agents wrote lowercase actions (created / modified /
+# deleted), owner_uid as a number and no @timestamp / host / rule; those lines
+# still parse (event time = ingest time).
+#
+# The JSON is read with one look-ahead per key (as in sso.yaml), so key order
+# does not matter and unknown keys are ignored. Each action is its own pattern
+# because ECS event.type differs per action (creation / deletion / change),
+# which a json_map rule cannot express.
 
-mapping:
+# The watcher's own time, with its UTC offset.
+timestamp:
+  regex: '"@timestamp":"(?P<ts>[^"]+)"'
+  format: iso8601
 
-#  raw.@timestamp: "event.created"
-#  raw.host: "host.name"
+vars:
+  # anything a shipper put before the JSON object, then the opening brace
+  start: '^[^{]*\{'
+  # file_path is required; every other key is optional and only captured when
+  # non-empty (string values may contain \" escapes)
+  fields: '(?=.*?"file_path":"(?P<file_path>(?:[^"\\]|\\.)+)")(?=(?:.*?"host":"(?P<host>(?:[^"\\]|\\.)+)")?)(?=(?:.*?"rule":"(?P<rule>(?:[^"\\]|\\.)+)")?)(?=(?:.*?"owner":"(?P<owner>(?:[^"\\]|\\.)+)")?)(?=(?:.*?"owner_uid":"?(?P<uid>\d+))?)(?=(?:.*?"mode":"(?P<mode>[0-7]+)")?)'
 
+x-fim-mapping: &fim_mapping
   action: "event.action"
-#  raw.rule: "rule.name"
-
+  host: "host.name"
   file_path: "file.path"
+  rule: "rule.name"
   owner: "file.owner"
-  owner_uid: "file.uid"
+  uid: "file.uid"
   mode: "file.mode"
 
-static:
-  event.kind: "alert"
-  event.category: "file"
-  event.type: "change"
-  service.type: "fim"
+patterns:
+
+  - name: "fim_created"
+    prematch: ['"ADDED"', '"added"', '"CREATED"', '"created"']
+    regex: '%{start}(?=.*?"action":"(?P<action>(?i:added|created))")%{fields}'
+    mapping: *fim_mapping
+    static: &fim_static
+      service.type: "fim"
+      event.kind: "alert"
+      event.category: "file"
+      event.type: "creation"
+
+  - name: "fim_deleted"
+    prematch: ['"REMOVED"', '"removed"', '"DELETED"', '"deleted"']
+    regex: '%{start}(?=.*?"action":"(?P<action>(?i:removed|deleted))")%{fields}'
+    mapping: *fim_mapping
+    static:
+      <<: *fim_static
+      event.type: "deletion"
+
+  # MODIFIED and any other action the watcher may report (attributes, rename)
+  - name: "fim_changed"
+    prematch: '"action":"'
+    regex: '%{start}(?=.*?"action":"(?P<action>(?:[^"\\]|\\.)+)")%{fields}'
+    mapping: *fim_mapping
+    static:
+      <<: *fim_static
+      event.type: "change"
