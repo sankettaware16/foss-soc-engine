@@ -5,6 +5,8 @@ strategy: "multi_match"
 
 # Every squid access line carries a Unix epoch (seconds.milliseconds) —
 # that's the event's REAL time, parsed into @timestamp (UTC).
+# Absolute request URLs (scheme://host/path) also give url.path, without
+# the query string; CONNECT targets and "-" have no path.
 timestamp:
   group: event_created
   format: epoch
@@ -79,7 +81,7 @@ patterns:
 
   - name: "http_request_ipv6_dst"
     prematch: "TCP_"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<dst_ip>[0-9a-fA-F:]+):(?P<dst_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?P<url>\S+)\s+-\s+(?:ORIGINAL_DST|HIER_DIRECT)/(?P<orig_dst>\S+)\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<dst_ip>[0-9a-fA-F:]+):(?P<dst_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?:(?=(?:[A-Za-z][A-Za-z0-9+.-]*://[^/?#\s]+)(?P<url_path>/[^?#\s]*)))?(?P<url>\S+)\s+-\s+(?:ORIGINAL_DST|HIER_DIRECT)/(?P<orig_dst>\S+)\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -94,6 +96,7 @@ patterns:
       bytes: "destination.bytes|int"
       method: "http.request.method"
       url: "url.original"
+      url_path: "url.path"
       orig_dst: "destination.domain"
       content_type: "http.response.mime_type"
     static:
@@ -110,7 +113,7 @@ patterns:
 
   - name: "http_request_ip_dst"
     prematch: "ORIGINAL_DST/"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?P<url>\S+)\s+-\s+ORIGINAL_DST/(?P<orig_dst_ip>\d+\.\d+\.\d+\.\d+)\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?:(?=(?:[A-Za-z][A-Za-z0-9+.-]*://[^/?#\s]+)(?P<url_path>/[^?#\s]*)))?(?P<url>\S+)\s+-\s+ORIGINAL_DST/(?P<orig_dst_ip>\d+\.\d+\.\d+\.\d+)\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -125,6 +128,7 @@ patterns:
       bytes: "destination.bytes|int"
       method: "http.request.method"
       url: "url.original"
+      url_path: "url.path"
       orig_dst_ip: "destination.ip"
       content_type: "http.response.mime_type"
     static:
@@ -141,7 +145,7 @@ patterns:
 
   - name: "http_request_host_dst"
     prematch: "ORIGINAL_DST/"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?P<url>\S+)\s+-\s+ORIGINAL_DST/(?P<orig_dst_host>[A-Za-z0-9][A-Za-z0-9.\-]*)\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT)\s+(?:(?=(?:[A-Za-z][A-Za-z0-9+.-]*://[^/?#\s]+)(?P<url_path>/[^?#\s]*)))?(?P<url>\S+)\s+-\s+ORIGINAL_DST/(?P<orig_dst_host>[A-Za-z0-9][A-Za-z0-9.\-]*)\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -156,6 +160,7 @@ patterns:
       bytes: "destination.bytes|int"
       method: "http.request.method"
       url: "url.original"
+      url_path: "url.path"
       orig_dst_host: "destination.domain"
       content_type: "http.response.mime_type"
     static:
@@ -172,7 +177,7 @@ patterns:
 
   - name: "tcp_denied_http"
     prematch: "TCP_DENIED"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>TCP_DENIED)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>TCP_DENIED)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?:(?=(?:[A-Za-z][A-Za-z0-9+.-]*://[^/?#\s]+)(?P<url_path>/[^?#\s]*)))?(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -185,6 +190,7 @@ patterns:
       bytes: "source.bytes|int"
       method: "http.request.method"
       url: "url.original"
+      url_path: "url.path"
       content_type: "http.response.mime_type"
     static:
       observer.vendor: "Squid"
@@ -232,7 +238,7 @@ patterns:
   # TCP_DENIED patterns so denials keep their specific outcome/action_detail.
   - name: "tcp_local_response"
     prematch: "HIER_NONE"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>[A-Z]+)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>[A-Z]+)\s+(?:(?=(?:[A-Za-z][A-Za-z0-9+.-]*://[^/?#\s]+)(?P<url_path>/[^?#\s]*)))?(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -245,6 +251,7 @@ patterns:
       bytes: "source.bytes|int"
       method: "http.request.method"
       url: "url.original"
+      url_path: "url.path"
       content_type: "http.response.mime_type"
     static:
       observer.vendor: "Squid"
@@ -260,7 +267,7 @@ patterns:
 
   - name: "none_http_fail"
     prematch: "HIER_NONE"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_NONE)?(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE(?:_NONE)?(?:_ABORTED)?)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s+(?:(?=(?:[A-Za-z][A-Za-z0-9+.-]*://[^/?#\s]+)(?P<url_path>/[^?#\s]*)))?(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -273,6 +280,7 @@ patterns:
       bytes: "source.bytes|int"
       method: "http.request.method"
       url: "url.original"
+      url_path: "url.path"
       content_type: "http.response.mime_type"
     static:
       observer.vendor: "Squid"
@@ -429,7 +437,7 @@ patterns:
   # the specific none_* patterns so they win and classify first.
   - name: "none_request_fallback"
     prematch: "HIER_NONE"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE[A-Z_]*)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>\S+)\s+(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+-:-\s+(?P<action>NONE[A-Z_]*)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>\S+)\s+(?:(?=(?:[A-Za-z][A-Za-z0-9+.-]*://[^/?#\s]+)(?P<url_path>/[^?#\s]*)))?(?P<url>\S+)\s+-\s+HIER_NONE/-\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -442,6 +450,7 @@ patterns:
       bytes: "source.bytes|int"
       method: "http.request.method"
       url: "url.original"
+      url_path: "url.path"
       content_type: "http.response.mime_type"
     static:
       observer.vendor: "Squid"
@@ -461,7 +470,7 @@ patterns:
   # pattern so every specific shape wins first.
   - name: "http_request_fallback"
     prematch: "TCP_"
-    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>[A-Z_]+)\s+(?P<url>\S+)\s+\S+\s+(?P<hierarchy>[A-Z_]+)/(?P<orig_dst>\S+)\s+(?P<content_type>\S+)$'
+    regex: '^(?P<sys_ts>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}|\S+)\s+(?P<host>\S+)\s+\((?P<proc_name>[^)]+)\)(?:\[(?P<pid>\d+)\])?:\s+(?P<event_created>\d+\.\d+)\s+(?P<duration>\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+):(?P<src_port>\d+)\s+(?P<proxy_ip>\d+\.\d+\.\d+\.\d+):(?P<proxy_port>\d+)\s+(?P<action>TCP_[A-Z_]+)/(?P<status>\d+)\s+(?P<bytes>\d+)\s+(?P<method>[A-Z_]+)\s+(?:(?=(?:[A-Za-z][A-Za-z0-9+.-]*://[^/?#\s]+)(?P<url_path>/[^?#\s]*)))?(?P<url>\S+)\s+\S+\s+(?P<hierarchy>[A-Z_]+)/(?P<orig_dst>\S+)\s+(?P<content_type>\S+)$'
     mapping:
       host: ["host.name", "observer.hostname"]   # the proxy NODE (tp1..tpN): host.name + pipeline-proof observer.hostname
       proc_name: "process.name"
@@ -476,6 +485,7 @@ patterns:
       bytes: "destination.bytes|int"
       method: "http.request.method"
       url: "url.original"
+      url_path: "url.path"
       hierarchy: "squid.hierarchy"
       orig_dst: "destination.address"
       content_type: "http.response.mime_type"
