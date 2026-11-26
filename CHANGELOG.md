@@ -71,6 +71,8 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Squid parser** now extracts request URL paths into `url.path` alongside
+  `url.original`.
 - **FIM parser (`rules/fim.yaml`) reads the current watcher output.** Events
   now carry the watcher's own time (`@timestamp`, was ingest time), the host
   the file changed on (`host.name`) and `rule.name`; a removed file no longer

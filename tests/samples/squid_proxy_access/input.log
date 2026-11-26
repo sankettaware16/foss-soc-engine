@@ -13,3 +13,5 @@ Jul  9 10:00:04 proxyhost (squid-1)[123]: this line matches nothing
 2026-10-06T09:51:03+00:00 proxyhost2 (squid-4): 1791260463.253 0 10.0.0.72:55752 -:- NONE_NONE/409 3701 CONNECT connectivity.example.com:443 - HIER_NONE/- text/html
 2026-10-06T09:52:05+00:00 proxyhost2 (squid-5): 1791260525.446 0 10.0.0.73:52898 -:- NONE_NONE_ABORTED/000 0 GET http://probe.example.com/success.txt? - HIER_NONE/- -
 2026-10-06T09:58:05+00:00 proxyhost2 (squid-4): 1791260885.500 543 10.0.0.74:65101 203.0.113.81:27218 TCP_MISS/404 1516 BITS_POST http://updates.example.net/eventlog/report.zip - ORIGINAL_DST/updates.example.net text/html
+2026-11-26T14:52:29+00:00 proxy1 (squid-1)[1903]: 1795684949.676 78 10.0.0.5:56875 203.0.113.1:39873 TCP_MISS/206 12795 GET http://203.0.113.1/pr/example/Office/Data/update.cab? - ORIGINAL_DST/203.0.113.1 application/octet-stream
+2026-11-26T14:49:17+00:00 proxy1 (squid-6)[1841]: 1795684757.148 349 10.0.0.6:52940 203.0.113.2:21299 TCP_MISS/206 711891 GET http://203.0.113.2/c/msdownload/update/software/defu/2026/11/update.exe? - ORIGINAL_DST/203.0.113.2 application/octet-stream
